@@ -101,32 +101,74 @@
 
 ## Common structure
 
-1. Data Ingestion and Processing:
+1. Data Ingestion and Processing
     - Connect to market data sources or APIs.
     - Receive and parse incoming market data feeds in real-time.
     - Store or update relevant market data in memory or a database.
-2. Strategy Development:
+2. Strategy Development
     - Implement mathematical models, statistical analysis, or machine learning techniques to generate trading signals.
     - Define rules and parameters for trade entry, exit, position sizing, and risk management.
     - Incorporate any proprietary algorithms or trading strategies specific to the firm's approach.
-3. Order Generation:
+3. Order Generation
     - Translate trading signals or strategy rules into order generation logic.
     - Determine the desired order type (market, limit, etc.) and order quantity based on the trading strategy.
     - Apply any pre-trade risk checks or constraints defined by regulatory requirements or risk management rules.
-4. Order Routing and Execution:
+4. Order Routing and Execution
     - Connect to order execution venues or trading platforms via APIs.
     - Route orders to the appropriate venues based on factors like liquidity, execution speed, or transaction costs.
     - Handle order execution confirmations and updates from the venues.
     - Implement algorithms for smart order routing, balancing tradeoff between speed and best execution.
-5. Risk Management:
+5. Risk Management
     - Monitor positions, exposure, and overall risk metrics in real-time.
     - Apply risk limits or controls to prevent excessive loss or exposure.
     - Implement risk mitigation techniques like hedging or portfolio rebalancing.
-6. Performance Monitoring and Analysis:
+6. Performance Monitoring and Analysis
     - Track and record trading performance metrics, including P&L (profit and loss), trade statistics, and order execution quality.
     - Conduct post-trade analysis to evaluate the effectiveness of the trading strategies.
     - Monitor latency and system performance to ensure efficient operation and identify any issues.
-7. Infrastructure and Connectivity:
+7. Infrastructure and Connectivity
     - Build and maintain a high-performance, low-latency infrastructure.
     - Optimize networking, server hardware, and software configurations for fast data processing and order execution.
     - Implement fault-tolerant and high-availability mechanisms to ensure system reliability.
+
+## Common protocols
+
+1. FIX (Financial Information eXchange) Protocol
+    - FIX is a widely used protocol in the financial industry for communication between trading systems, exchanges, and brokers.
+    - It is a standard messaging protocol that facilitates order routing, trade execution, and market data dissemination.
+    - FIX provides a structured format for transmitting trade-related information and is commonly used in both internal and external communications.
+2. REST (Representational State Transfer) API
+    - REST is an architectural style used for building web services that can be accessed over the internet.
+    - REST APIs use HTTP as the underlying communication protocol and are often employed for accessing external APIs or web-based services.
+    - HFT firms may utilize REST APIs to connect to data providers, exchanges, or other external platforms for market data retrieval or order placement.
+3. WebSockets
+    - WebSockets is a communication protocol that provides full-duplex, bidirectional communication between a client and a server over a single, long-lived connection.
+    - It allows for real-time data streaming and enables efficient and low-latency communication.
+    - HFT firms may utilize WebSockets to receive streaming market data or execute trades in real-time.
+4. Native API Protocols
+    - Some proprietary trading systems or platforms provide their own custom API protocols for connectivity.
+    - These protocols are specific to the system or platform being accessed and often offer optimized and low-latency communication.
+    - HFT firms may integrate with these native APIs to access internal trading systems or platforms.
+5. Binary Protocols
+    - Binary protocols are used for high-performance and efficient data transmission.
+    - They typically involve encoding data in a binary format to reduce overhead and increase transmission speed.
+    - HFT firms may employ custom binary protocols for communication between internal systems or for high-speed connectivity with specific trading platforms or exchanges.
+6. TCP/IP (Transmission Control Protocol/Internet Protocol)
+    - TCP/IP is the fundamental protocol suite used for internet communication.
+    - It provides reliable, connection-oriented communication between network devices.
+    - HFT firms often utilize TCP/IP as the underlying protocol for communication with internal systems, external APIs, or data providers.
+7. gRPC
+    - gRPC is a modern, high-performance, open-source framework developed by Google that allows efficient communication between client and server applications.
+    - It is based on the protobuf (Protocol Buffers) serialization format, which enables fast and compact data transmission.
+    - usage examples
+        1. Internal Communication
+            - gRPC can be used for inter-process communication or communication between different components within the trading system.
+            - It offers a lightweight, efficient, and high-performance communication channel, which is crucial for fast and reliable data exchange between different modules or services.
+        2. Microservices Architecture
+            - HFT firms may adopt a microservices architecture, where different components of the trading system are developed and deployed as separate services.
+            - gRPC can be utilized as the communication protocol between these microservices, allowing them to interact efficiently and exchanging data in a performant manner.
+        3. API Development
+            - HFT firms may develop their own APIs for internal purposes, such as accessing proprietary trading functionalities or connecting with specific systems. gRPC can be employed to define and implement these APIs, providing a scalable and efficient communication mechanism.
+        4. Integration with External Services
+            - HFT firms often need to integrate with external services, such as market data providers or execution venues.
+            - gRPC can be used to develop client applications that communicate with these external services, allowing for fast and reliable data retrieval, order placement, and trade execution.
