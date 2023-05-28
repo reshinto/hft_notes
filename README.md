@@ -410,3 +410,43 @@
 4. Execution and Technology
     - Forex trading requires efficient execution and low-latency connectivity to capitalize on rapid market movements.
     - HFT firms in forex employ advanced order types, smart routing, and high-speed infrastructure to achieve optimal trade execution.
+
+## Commonly used APIs
+### Stocks
+
+1. Alpha Vantage API
+2. IEX Cloud API
+3. Polygon API
+4. TD Ameritrade API
+5. Alpaca API
+6. E*TRADE API
+7. Interactive Brokers API
+8. Fidelity API
+9. Questrade API
+10. Tradier API
+
+### Cryptocurrencies
+
+1. Binance API
+2. Coinbase API
+3. Kraken API
+4. Bitfinex API
+5. BitMEX API
+6. Gemini API
+7. Huobi API
+8. Bittrex API
+9. Poloniex API
+10. KuCoin API
+
+### Forex
+
+1. OANDA API
+2. Forex.com API
+3. IG API
+4. Dukascopy API
+5. FXCM API
+6. Interactive Brokers API
+7. LMAX Exchange API
+8. Saxo Bank API
+9. E*TRADE API
+10. Gain Capital (FOREX.com) API
