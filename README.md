@@ -31,29 +31,29 @@
 
 - In these trading systems, even small differences in latency can significantly impact profitability and competitiveness.
 - Therefore, HFT firms invest heavily in low-latency technology infrastructure, including high-speed networks, proximity hosting, and optimized software algorithms, to minimize execution times and maintain an edge in the markets.
-1. [High-Frequency Trading (HFT) Systems]()
+1. [High-Frequency Trading (HFT) Systems](https://github.com/reshinto/hft_notes/blob/main/trading_systems/high_frequency_trading_system.md)
     - HFT strategies involve executing a large number of trades within very short timeframes, often taking advantage of small price discrepancies or market inefficiencies that exist for only fractions of a second.
     - These systems rely on ultra-low latency to ensure rapid order placement, market data processing, and order execution to exploit fleeting opportunities.
 
-2. [Market Making Systems]()
+2. [Market Making Systems](https://github.com/reshinto/hft_notes/blob/main/trading_systems/market_making_system.md)
     - Market making involves providing liquidity to the market by continuously placing bid and ask quotes for a particular security.
     - Market makers aim to profit from the bid-ask spread while minimizing the risk exposure.
     - Ultra-low latency is essential for market-making systems to swiftly adjust quotes in response to changing market conditions and to ensure fast order execution when interacting with incoming orders.
 
-3. [Arbitrage Trading Systems]()
+3. [Arbitrage Trading Systems](https://github.com/reshinto/hft_notes/blob/main/trading_systems/arbitrage_trading_system.md)
     - Arbitrage strategies seek to profit from price discrepancies between different markets, exchanges, or instruments.
     - These price differences may exist for only short periods, requiring ultra-low latency to identify, analyze, and execute trades swiftly to exploit the arbitrage opportunity before it diminishes.
 
-4. [Scalping Systems]()
+4. [Scalping Systems](https://github.com/reshinto/hft_notes/blob/main/trading_systems/scalping_system.md)
     - Scalping strategies aim to profit from small price fluctuations by entering and exiting trades rapidly.
     - These systems typically seek to capture very short-term market movements and require ultra-low latency to enter and exit positions quickly with minimal slippage.
 
-5. [News-Based Trading Systems]()
+5. [News-Based Trading Systems](https://github.com/reshinto/hft_notes/blob/main/trading_systems/news_based_trading_system.md)
     - Some trading systems rely on news or event-driven strategies, where the speed of information processing is crucial.
     - These systems analyze news feeds, social media sentiment, or other data sources to identify market-moving events and execute trades based on the anticipated impact.
     - Ultra-low latency is essential to process and react to news events in real-time.
 
-6. [Statistical Arbitrage Systems]()
+6. [Statistical Arbitrage Systems](https://github.com/reshinto/hft_notes/blob/main/trading_systems/statistical_arbitrage_system.md)
     - Statistical arbitrage strategies seek to identify and exploit statistical patterns or relationships between different securities or assets.
     - These systems often involve high-frequency trading and require ultra-low latency to capitalize on the short-lived opportunities identified by the statistical models.
 
