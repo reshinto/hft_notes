@@ -200,3 +200,36 @@
 6. Hybrid Architectures
     - HFT systems may adopt hybrid architectures that combine multiple design patterns and technologies.
     - For example, a hybrid architecture may leverage microservices for flexibility and scalability while incorporating event-driven messaging for fast and asynchronous communication between components.
+
+## Common limitations or barriers of entry
+
+1. Capital Requirements
+    - HFT systems often require substantial capital to establish and maintain the necessary infrastructure, such as high-performance servers, low-latency connectivity, and co-location services.
+    - The costs associated with building and operating such systems can be prohibitive for individual traders.
+
+2. Technology and Expertise:
+    - HFT systems rely on advanced technology, sophisticated algorithms, and low-latency infrastructure.
+    - Developing and maintaining these systems requires specialized knowledge in areas such as programming, algorithm design, data analysis, and market microstructure.
+    - Acquiring the necessary technical skills and expertise can be challenging for individuals without prior experience or access to resources.
+
+3. Access to Market Data
+    - HFT systems rely on real-time market data feeds to make rapid trading decisions.
+    - Obtaining access to high-quality and low-latency market data can be costly and may require establishing relationships with market data providers or exchanges.
+    - Data acquisition and connectivity challenges can limit an individual's ability to build and operate an HFT system effectively.
+
+4. Regulatory Compliance
+    - HFT activities are subject to specific regulations and compliance requirements imposed by regulatory authorities.
+    - Complying with these regulations, such as market surveillance, reporting obligations, and risk management standards, can be complex and demanding for individual traders who may lack the necessary resources or infrastructure to meet these requirements.
+
+5. Competition
+    - HFT is a highly competitive field dominated by large financial institutions and dedicated HFT firms.
+    - These established players have significant resources, technology infrastructure, and expertise, giving them a competitive advantage over individual traders.
+    - Overcoming competition and establishing a profitable presence in the HFT space can be challenging for individuals.
+
+6. Risk Management and Resilience
+    - HFT systems operate in high-speed, highly dynamic market environments, which can expose them to various risks, including technology failures, market disruptions, and sudden changes in market conditions.
+    - Developing robust risk management strategies, ensuring system resilience, and managing operational risks are critical but complex tasks for individuals building HFT systems.
+
+7. Market Access and Relationships
+    - HFT systems often require direct market access and relationships with exchanges or liquidity providers to execute trades efficiently.
+    - Establishing these connections and building the necessary market relationships can be difficult for individuals without the support of a larger organization or the ability to meet specific access requirements.
