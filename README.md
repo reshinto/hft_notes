@@ -1,5 +1,6 @@
-# Trading Systems
-## Does not require ultra-low latency
+# HFT notes
+## Trading Systems
+### Does not require ultra-low latency
 
 - It's important to note that even in trading systems that don't demand ultra-low latency, efficient and reliable execution remains important.
 - Latency requirements may vary depending on the specific strategy, market conditions, and the desired trade execution speed.
@@ -26,7 +27,7 @@
     - Trading systems focused on options or other derivatives may not require ultra-low latency, as these markets often have longer expiration periods and less frequent trading.
     - Strategies involving options spreads, volatility trading, or hedging positions can operate with slightly higher latency requirements.
 
-## Requies ultra-low latency
+### Requies ultra-low latency
 
 - In these trading systems, even small differences in latency can significantly impact profitability and competitiveness.
 - Therefore, HFT firms invest heavily in low-latency technology infrastructure, including high-speed networks, proximity hosting, and optimized software algorithms, to minimize execution times and maintain an edge in the markets.
@@ -97,3 +98,35 @@
 10. High-Frequency Trading (HFT) Algorithms
     - HFT algorithms encompass a broad range of ultra-low latency algorithms that execute a large number of trades within extremely short timeframes.
     - These algorithms exploit small price discrepancies, market microstructure patterns, or latency arbitrage opportunities, relying on speed and technology to gain a competitive edge.
+
+## Common structure
+
+1. Data Ingestion and Processing:
+    - Connect to market data sources or APIs.
+    - Receive and parse incoming market data feeds in real-time.
+    - Store or update relevant market data in memory or a database.
+2. Strategy Development:
+    - Implement mathematical models, statistical analysis, or machine learning techniques to generate trading signals.
+    - Define rules and parameters for trade entry, exit, position sizing, and risk management.
+    - Incorporate any proprietary algorithms or trading strategies specific to the firm's approach.
+3. Order Generation:
+    - Translate trading signals or strategy rules into order generation logic.
+    - Determine the desired order type (market, limit, etc.) and order quantity based on the trading strategy.
+    - Apply any pre-trade risk checks or constraints defined by regulatory requirements or risk management rules.
+4. Order Routing and Execution:
+    - Connect to order execution venues or trading platforms via APIs.
+    - Route orders to the appropriate venues based on factors like liquidity, execution speed, or transaction costs.
+    - Handle order execution confirmations and updates from the venues.
+    - Implement algorithms for smart order routing, balancing tradeoff between speed and best execution.
+5. Risk Management:
+    - Monitor positions, exposure, and overall risk metrics in real-time.
+    - Apply risk limits or controls to prevent excessive loss or exposure.
+    - Implement risk mitigation techniques like hedging or portfolio rebalancing.
+6. Performance Monitoring and Analysis:
+    - Track and record trading performance metrics, including P&L (profit and loss), trade statistics, and order execution quality.
+    - Conduct post-trade analysis to evaluate the effectiveness of the trading strategies.
+    - Monitor latency and system performance to ensure efficient operation and identify any issues.
+7. Infrastructure and Connectivity:
+    - Build and maintain a high-performance, low-latency infrastructure.
+    - Optimize networking, server hardware, and software configurations for fast data processing and order execution.
+    - Implement fault-tolerant and high-availability mechanisms to ensure system reliability.
