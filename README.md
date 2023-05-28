@@ -201,6 +201,81 @@
     - HFT systems may adopt hybrid architectures that combine multiple design patterns and technologies.
     - For example, a hybrid architecture may leverage microservices for flexibility and scalability while incorporating event-driven messaging for fast and asynchronous communication between components.
 
+## Common Databases
+
+- HFT firms typically use databases that offer high performance, low latency, and efficient data storage and retrieval capabilities.
+- The choice of database depends on the specific requirements of the trading system.
+- It's important to note that HFT firms may employ a combination of databases within their trading systems, each serving different purposes.
+- The choice of database depends on factors such as data volume, data access patterns, latency requirements, scalability, and specific use cases within the trading system.
+
+### Here are some commonly used databases in HFT trading systems:
+
+1. In-Memory Databases
+    - In-memory databases store data in the main memory (RAM) of the server, allowing for extremely fast data access and processing.
+    - These databases eliminate the latency associated with disk-based storage systems and can handle large volumes of real-time data with low latency.
+    - Examples
+        - Redis
+        - Apache Ignite
+        - VoltDB
+
+2. Time-Series Databases
+    - Time-series databases are optimized for storing and querying time-stamped data, such as market data and trade information.
+    - They provide efficient compression, indexing, and querying mechanisms specifically tailored for time-series data.
+    - Examples
+        - InfluxDB
+        - Prometheus
+        - Kdb+ (a Tick Database, a columnar-based database, and a Time-Series Database.)
+          - KDB+ is often referred to as a Tick Database because it excels at efficiently storing and processing tick data, which consists of individual trade or quote updates capturing price, volume, and other attributes of financial instruments.
+            - Its design is optimized to handle high volumes of time-stamped data, making it well-suited for tick-by-tick data storage and retrieval.
+          - At the same time, KDB+ is a columnar-based database.
+            - It organizes data in a column-oriented fashion, which offers advantages such as efficient compression, faster query performance, and improved data locality for analytical operations.
+            - The columnar structure allows for efficient storage and retrieval of large volumes of data, including time-series data, making it well-suited for handling financial market data.
+          - Furthermore, KDB+ is specifically designed to handle time-series data, making it a Time-Series Database.
+            - It provides specialized features and functions for managing and analyzing time-stamped data, such as handling irregular time intervals, time-based aggregations, and windowing operations.
+            - Its time-series capabilities enable efficient storage, retrieval, and analysis of data with temporal dependencies, which is a critical requirement in many financial applications.
+          - In summary, KDB+ can be described as a Tick Database due to its ability to handle tick data, a columnar-based database due to its column-oriented storage structure, and a Time-Series Database due to its specialized features for managing time-stamped data.
+
+3. Columnar Databases
+    - Columnar databases store data in a column-wise fashion, which allows for efficient compression and high-speed data retrieval.
+    - They are suitable for handling large volumes of historical data and conducting complex analytical queries.
+    - Examples
+        - Apache Cassandra
+        - Apache HBase
+        - ClickHouse
+        - Kdb+ (a Tick Database, a columnar-based database, and a Time-Series Database.)
+          - KDB+ is often referred to as a Tick Database because it excels at efficiently storing and processing tick data, which consists of individual trade or quote updates capturing price, volume, and other attributes of financial instruments.
+            - Its design is optimized to handle high volumes of time-stamped data, making it well-suited for tick-by-tick data storage and retrieval.
+          - At the same time, KDB+ is a columnar-based database.
+            - It organizes data in a column-oriented fashion, which offers advantages such as efficient compression, faster query performance, and improved data locality for analytical operations.
+            - The columnar structure allows for efficient storage and retrieval of large volumes of data, including time-series data, making it well-suited for handling financial market data.
+          - Furthermore, KDB+ is specifically designed to handle time-series data, making it a Time-Series Database.
+            - It provides specialized features and functions for managing and analyzing time-stamped data, such as handling irregular time intervals, time-based aggregations, and windowing operations.
+            - Its time-series capabilities enable efficient storage, retrieval, and analysis of data with temporal dependencies, which is a critical requirement in many financial applications.
+          - In summary, KDB+ can be described as a Tick Database due to its ability to handle tick data, a columnar-based database due to its column-oriented storage structure, and a Time-Series Database due to its specialized features for managing time-stamped data. 
+
+4. Tick Databases
+    - Tick databases are designed to handle high-frequency data, such as individual trade or quote updates (ticks).
+    - These databases can efficiently store and retrieve large volumes of tick data with low latency.
+    - Examples
+        - OneTick
+        - kdb+/q (a Tick Database, a columnar-based database, and a Time-Series Database.)
+          - KDB+ is often referred to as a Tick Database because it excels at efficiently storing and processing tick data, which consists of individual trade or quote updates capturing price, volume, and other attributes of financial instruments.
+            - Its design is optimized to handle high volumes of time-stamped data, making it well-suited for tick-by-tick data storage and retrieval.
+          - At the same time, KDB+ is a columnar-based database.
+            - It organizes data in a column-oriented fashion, which offers advantages such as efficient compression, faster query performance, and improved data locality for analytical operations.
+            - The columnar structure allows for efficient storage and retrieval of large volumes of data, including time-series data, making it well-suited for handling financial market data.
+          - Furthermore, KDB+ is specifically designed to handle time-series data, making it a Time-Series Database.
+            - It provides specialized features and functions for managing and analyzing time-stamped data, such as handling irregular time intervals, time-based aggregations, and windowing operations.
+            - Its time-series capabilities enable efficient storage, retrieval, and analysis of data with temporal dependencies, which is a critical requirement in many financial applications.
+          - In summary, KDB+ can be described as a Tick Database due to its ability to handle tick data, a columnar-based database due to its column-oriented storage structure, and a Time-Series Database due to its specialized features for managing time-stamped data.
+        - TickVault
+
+5. Relational Databases
+    - Although not as commonly used for ultra-low-latency applications, some HFT firms may still employ relational databases for certain aspects of their trading systems, such as trade settlement, risk management, or reporting. Examples include MySQL, PostgreSQL, and Oracle Database.
+
+6. NoSQL Databases
+    - NoSQL databases provide flexible, scalable, and high-performance storage solutions for handling large volumes of unstructured or semi-structured data. They are often used for storing non-time-sensitive data or supporting back-office functions. Examples include MongoDB, Apache Cassandra, and Amazon DynamoDB.
+
 ## Common limitations or barriers of entry
 
 1. Capital Requirements
