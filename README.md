@@ -1,5 +1,6 @@
 # Trading Systems
 ## Does not require ultra-low latency
+
 - It's important to note that even in trading systems that don't demand ultra-low latency, efficient and reliable execution remains important.
 - Latency requirements may vary depending on the specific strategy, market conditions, and the desired trade execution speed.
 1. Positional Trading Systems
@@ -24,7 +25,9 @@
 5. Options or Derivatives Trading Systems
     - Trading systems focused on options or other derivatives may not require ultra-low latency, as these markets often have longer expiration periods and less frequent trading.
     - Strategies involving options spreads, volatility trading, or hedging positions can operate with slightly higher latency requirements.
+
 ## Requies ultra-low latency
+
 - In these trading systems, even small differences in latency can significantly impact profitability and competitiveness.
 - Therefore, HFT firms invest heavily in low-latency technology infrastructure, including high-speed networks, proximity hosting, and optimized software algorithms, to minimize execution times and maintain an edge in the markets.
 1. High-Frequency Trading (HFT) Systems
@@ -52,3 +55,45 @@
 6. Statistical Arbitrage Systems
     - Statistical arbitrage strategies seek to identify and exploit statistical patterns or relationships between different securities or assets.
     - These systems often involve high-frequency trading and require ultra-low latency to capitalize on the short-lived opportunities identified by the statistical models.
+
+## Commonly used algorithms
+
+1. Market Making Algorithms
+    - Market making algorithms are used to provide liquidity to the market by continuously quoting bid and ask prices for a particular security.
+    - These algorithms dynamically adjust quotes based on market conditions, order book depth, and other factors to maintain a balanced position and profit from the bid-ask spread.
+
+2. Statistical Arbitrage Algorithms
+    - Statistical arbitrage algorithms aim to exploit pricing inefficiencies or relative mispricings between related securities based on statistical models.
+    - These algorithms analyze historical relationships, correlations, or deviations between assets and generate trades to capture opportunities for price convergence or divergence.
+
+3. Momentum Trading Algorithms
+    - Momentum trading algorithms identify and capitalize on short-term price trends or momentum in the market.
+    - These algorithms use technical indicators, market data analysis, and pattern recognition techniques to enter positions aligned with the prevailing trend and exit when the momentum weakens.
+
+4. Pairs Trading Algorithms
+    - Pairs trading algorithms involve trading a pair of related securities simultaneously, taking advantage of their relative price movements.
+    - These algorithms monitor the price spread between the two securities and execute trades when the spread deviates from its historical mean, anticipating a reversion to the mean.
+
+5. Liquidity Detection Algorithms
+    - Liquidity detection algorithms aim to identify and interact with hidden or non-displayed liquidity in the market, such as dark pools or alternative trading venues.
+    - These algorithms employ sophisticated order routing and execution techniques to access and execute trades in less visible liquidity sources.
+
+6. Smart Order Routing (SOR) Algorithms
+    - SOR algorithms optimize order routing decisions by dynamically analyzing market conditions, liquidity availability, and execution costs across multiple exchanges or trading venues.
+    - These algorithms split orders, route them to the most favorable venues, and balance execution speed and price improvement to achieve best execution.
+
+7. Execution Algorithms
+    - Execution algorithms are designed to optimize the execution of large orders by breaking them into smaller, manageable parts and executing them over time. 
+    - These algorithms consider factors like market impact, trading volumes, and order book dynamics to minimize slippage and achieve efficient execution.
+
+8. Scalping Algorithms
+    - Scalping algorithms focus on making a large number of small-profit trades by capturing small price differentials or spreads.
+    - These algorithms aim to capitalize on short-term price fluctuations and typically employ high-frequency trading techniques to execute trades rapidly.
+
+9. Volatility Trading Algorithms
+    - Volatility trading algorithms aim to profit from changes in market volatility levels.
+    - These algorithms employ options strategies, volatility derivatives, or dynamic hedging techniques to take positions based on anticipated volatility movements or shifts in implied volatility levels.
+
+10. High-Frequency Trading (HFT) Algorithms
+    - HFT algorithms encompass a broad range of ultra-low latency algorithms that execute a large number of trades within extremely short timeframes.
+    - These algorithms exploit small price discrepancies, market microstructure patterns, or latency arbitrage opportunities, relying on speed and technology to gain a competitive edge.
