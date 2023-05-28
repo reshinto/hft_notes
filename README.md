@@ -4,7 +4,7 @@
 
 - It's important to note that even in trading systems that don't demand ultra-low latency, efficient and reliable execution remains important.
 - Latency requirements may vary depending on the specific strategy, market conditions, and the desired trade execution speed.
-1. Positional Trading Systems
+1. [Positional Trading Systems](https://github.com/reshinto/hft_notes/blob/main/trading_systems/position_trading_system.md)
     - Positional trading involves holding positions in securities for longer durations, ranging from days to months or even years.
     - These systems typically analyze fundamental factors, macroeconomic indicators, or technical patterns to identify investment opportunities.
     - Since the holding period is longer, the latency requirements are less stringent compared to high-frequency trading.
