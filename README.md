@@ -172,3 +172,31 @@
         4. Integration with External Services
             - HFT firms often need to integrate with external services, such as market data providers or execution venues.
             - gRPC can be used to develop client applications that communicate with these external services, allowing for fast and reliable data retrieval, order placement, and trade execution.
+
+## Common Architectures
+
+- Factors such as trading strategies, market focus, regulatory requirements, and existing technology infrastructure influence the selection of the most suitable architecture for a particular trading system.
+1. Monolithic Architecture
+    - In a monolithic architecture, the entire trading system is built as a single, self-contained application.
+    - All components, such as market data processing, order management, strategy execution, and risk management, are tightly coupled within a single codebase. 
+    - While this design simplifies development and deployment, it may pose challenges in scalability and flexibility.
+2. Microservices Architecture
+    - Microservices architecture decomposes the trading system into a collection of loosely coupled, independently deployable services.
+    - Each service focuses on a specific functionality, such as market data retrieval, order routing, risk management, or analytics.
+    - These services communicate with each other using lightweight protocols (such as gRPC or REST) and can be developed, deployed, and scaled independently.
+    - This design allows for better scalability, fault isolation, and flexibility in adding or updating components.
+3. Event-Driven Architecture
+    - Event-driven architecture focuses on asynchronous communication and processing of events.
+    - In this design, various components of the trading system publish and subscribe to events, such as market data updates, order executions, or system notifications.
+    - Components react to events asynchronously, enabling parallel processing and faster response times.
+    - Event-driven architectures can help reduce latency and enable high throughput in HFT systems.
+4. Distributed Computing Architecture
+    - Distributed computing architectures leverage multiple nodes or machines working together to process data and execute trades.
+    - This design enables parallel processing, load balancing, and fault tolerance.
+    - Distributed architectures often involve clusters of servers or cloud-based infrastructure to handle the high volumes of data and compute-intensive tasks in HFT systems.
+5. High-Performance Computing (HPC) Architecture
+    - HPC architectures utilize specialized hardware, such as FPGA (Field-Programmable Gate Array) or GPU (Graphics Processing Unit), to achieve ultra-low latency and high-performance computing capabilities.
+    - These architectures offload computationally intensive tasks, such as market data processing or complex algorithmic calculations, to hardware accelerators, resulting in faster processing speeds and reduced latencies.
+6. Hybrid Architectures
+    - HFT systems may adopt hybrid architectures that combine multiple design patterns and technologies.
+    - For example, a hybrid architecture may leverage microservices for flexibility and scalability while incorporating event-driven messaging for fast and asynchronous communication between components.
