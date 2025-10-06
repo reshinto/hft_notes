@@ -1,4 +1,4 @@
-# HFT notes
+# Notes
 ## Trading Systems
 ### Does not require ultra-low latency
 
