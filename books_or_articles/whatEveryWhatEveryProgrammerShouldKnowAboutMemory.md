@@ -488,3 +488,245 @@ Example: **2-3-2-8-T1** ⇒ CL=2, tRCD=3, tRP=2, tRAS=8, Command Rate=T1.
 - For performance builds, prefer **dedicated VRAM** GPUs over shared-memory graphics.
 
 ## CPU Caches
+- CPU cores have sped up far faster than DRAM. Making DRAM as fast as cores is **technically possible but economically infeasible**, so systems pair a **small amount of fast SRAM** (as **CPU caches**) with large, cheap **DRAM**. Mapping SRAM as a special OS-managed address range would drown in **software overhead and portability issues**.
+- Instead, processors **transparently cache** recently/nearby data, exploiting **temporal** and **spatial locality**.
+- Because caches are much smaller than main memory (often ~**1/1000** the size), performance depends on **smart replacement and prefetching**—and on programmers writing **cache-friendly code**.
+
+**Key Points**
+- **The widening gap:**  
+  1990s onward: **CPU frequency ↑↑** while **DRAM/FSB lagged** for cost/power reasons → **memory stalls dominate**.
+- **Why not “all SRAM”?**  
+  SRAM could match core speeds but is **orders of magnitude more expensive** than DRAM for capacity; practical systems need **lots of RAM**.
+- **OS-managed fast region? Not viable.**  
+  Exposes **complex mapping**, **per-process arbitration**, **portability** issues; the **overhead erases benefits**.
+- **Transparent caches exploit locality:**  
+  - **Temporal locality:** recently used data/code is likely reused soon.  
+  - **Spatial locality:** nearby data/code (same line/region) often accessed together.
+- **Caches are tiny vs DRAM:**  
+  Example rule of thumb: ~**1/1000** (e.g., **4 MB cache vs 4 GB RAM**). If the **working set** fits the cache, great; if not, rely on **replacement** and **prefetching**.
+- **Prefetching & replacement matter:**  
+  Good **hardware/software prefetch**, plus smart **replacement**, can make a small cache **act larger** by hiding DRAM latency.
+
+**Worked Example (from the text, with explicit math)**
+**Assumptions:** DRAM access = **200 cycles**, cache hit = **15 cycles**.  
+**Use case:** **100** unique data items, each used **100** times.
+
+- **Without cache:** `100 × 100 × 200 = 2,000,000 cycles`.
+- **With cache (all data fits):**  
+  For each item: 1 miss (**200**) + 99 hits (**99 × 15 = 1,485**) = **1,685 cycles**.  
+  Total: `100 × 1,685 = 168,500 cycles`.
+
+**Practical Tips**
+- **Process in cache-sized tiles**; iterate in **memory order**.  
+- **Choose data layouts** that match access patterns (SoA vs AoS).  
+- **Use prefetching** (compiler intrinsics or built-in HW) to hide latency.  
+- **Measure cache misses/stalls** to confirm improvements.
+
+---
+
+### 3.1 CPU Caches in the Big Picture
+- Modern CPUs interpose **fast SRAM caches** between cores and main memory: **all loads/stores go through the cache** over a fast core↔cache link.
+- Early designs had a **single cache**, but practice showed that **separating instruction (L1i) and data (L1d)** caches works better, and that **additional cache levels (L2/L3)** are needed as the **core↔DRAM gap** widened.
+- With **multi-core** and **multi-thread (SMT/Hyper-Threading)** CPUs, **threads on the same core share that core’s L1**, cores **share higher-level caches**, and **different sockets do not share caches**.
+- Exact cache interfaces vary by CPU and may not require data to pass through every higher level; those design choices are **invisible to programmers**.
+
+**Key Points**
+- **Minimum cache configuration (Fig. 3.1)**  
+  The CPU core is **not directly connected to DRAM**; **every load/store** traverses the cache over a **special, fast link**. The cache and DRAM sit on the system/FSB side for access to the rest of the machine. *(user-provided text)*
+- **Split L1 caches: instruction vs data**  
+  Although machines are “von Neumann” in memory model, **separate L1i and L1d** improve performance because **code and data working sets are largely independent**. Bonus: caching **decoded instructions** can speed re-execution after branch mispredictions/flushes. *(user-provided text)*
+- **Deeper hierarchies as the gap grows (Fig. 3.2)**  
+  A single small/fast L1 couldn’t bridge the core↔DRAM gap, so **bigger, slower L2 (and often L3)** caches were added. **Three levels** are common; future designs may add more as core counts rise. *(user-provided text)*
+- **Data flow isn’t strictly linear through all levels**  
+  The diagram is **schematic**: data **need not** pass through every higher level on the way to memory; **designers have latitude** in cache interfaces. **Programmers do not see these details directly.** *(user-provided text)*
+- **Cores vs threads; who shares what? (Fig. 3.3)**  
+  - **Threads** (SMT) on the **same core** share **that core’s L1** (the core’s resources are largely shared apart from some registers).  
+  - **Each core** has **its own L1i/L1d**.  
+  - **All cores on a socket** typically **share higher-level caches** (e.g., L3).  
+  - **Different sockets (processors)** **do not share caches**.  
+  *(user-provided text)*
+
+---
+
+### 3.2 Cache Operation at High Level
+- By default, **all CPU loads/stores go through caches**; only special regions or instructions bypass them. Caches store data in **cache lines** (typically **64 B**) and identify them with **tags** derived from the (virtual or physical) address.
+- A line is fetched on first use; subsequent hits are served quickly.
+- **Writes** normally require the line in cache (read-for-ownership), creating **dirty** lines that must be written back.
+- On modern multicore systems, caches are kept **coherent** (e.g., MESI-style) via **snooping** and invalidation / cache-to-cache transfers.
+- Implementations differ (e.g., **inclusive** vs **exclusive** hierarchies), but all aim to minimize expensive trips to DRAM.
+- The real cost varies by level (e.g., Pentium M: **L1≈3 cy**, **L2≈14 cy**, **DRAM≈240 cy**) and can sometimes be hidden by **pipelining** and **write buffering**.
+- Measured behavior shows **plateaus** as working sets overflow L1 then L2—often causing **order-of-magnitude** slowdowns—hence the importance of cache-friendly code.
+
+**Key points**
+1. What’s cached and how it’s identified
+    - **Default cacheability:** All normal memory is cacheable (OS may mark exceptions; programmers can use special instructions to bypass caches—discussed later in §6).
+    - **Cache lines (spatial locality):** Caches fetch **lines** (not single words). Early lines were 32 B; **64 B is common now**. A 64-bit bus needs **8 transfers** per 64-B line; DDR moves these efficiently.
+    - **Address split (offset / set / tag):** For a 64-B line, **offset O = 6 bits** (byte-in-line). Let **S** be the **set index** bits (there are **2^S sets**). The **tag T = address_bits − S − O** identifies which memory line occupies a slot in that set.  
+  *(Address used for the tag can be **virtual or physical**, depending on the implementation.)*
+
+2. Reads and writes
+    - **Read:** If not present, the **entire line** is loaded into **L1d**; the lower **O** bits select the byte(s) within the line.
+    - **Write (read-for-ownership):** CPUs still **load the line first** (can’t hold partial lines) unless using special mechanisms (e.g., **write-combining**, §6.1). A modified line becomes **dirty** until written back; on writeback, the **dirty flag clears**.
+
+3. Evictions & hierarchy policy
+    - **Eviction chain:** Making room in **L1d** may push the victim **down** (L2 → L3 → memory). Each hop costs more.
+    - **Exclusive vs inclusive:**
+      - **Exclusive (e.g., many AMD/VIA):** L1 and L2 **do not duplicate** contents; evicting L1 **pushes into L2**. Pros: better **effective capacity**; loading a new line may **touch only L1**. Cons: evictions can be **more expensive**.
+      - **Inclusive (e.g., many Intel):** **L1 ⊆ L2**; evicting L1 is **cheap** (the line is also in L2). Cons: some **duplication** reduces effective capacity, mitigated if L2 is large.
+    - **Controller freedom (within the memory model):** CPUs may **proactively write back** dirty lines during low bus activity; many internal policies are hidden behind the architectural memory model.
+
+4. Coherence across CPUs/cores (SMP)
+    - **Goal:** All processors observe a **uniform memory view**.
+    - **Mechanism:** **Snoop** and react to others’ read/write intents for a given line:
+      - If another CPU **writes** a line you hold **clean**, your copy is **invalidated**.
+      - If you hold a **dirty** line and another CPU needs it, your cache **supplies it directly** (cache-to-cache), often with memory updated by the controller.
+    - **Simple invariants (MESI-style behavior; §3.3.4 later):**
+      - A **dirty** line exists in **only one** cache.
+      - **Clean** copies may exist in **many** caches.
+
+5. Latency/costs (Pentium M example)
+
+    | Destination     | Cycles (approx.) |
+    |-----------------|------------------|
+    | **Register**    | ≤ 1              |
+    | **L1d**         | ~ 3              |
+    | **L2**          | ~ 14             |
+    | **Main memory** | ~ 240            |
+
+    - **Wire delay dominates** much of on-die L2 latency; larger caches tend to have **worse wire delays** (process shrinks help).
+
+6. Hiding some of the cost
+    - **Pipelining & early issue:** Loads started **early in the pipeline** can overlap other work; **L1 hits** (and sometimes **L2**) can be largely hidden.
+    - **Limits:** If the **address is late** (depends on prior ops) or resources are busy, you **pay** the latency.
+    - **Writes:** CPUs need not stall for the store to **complete in memory**; **store buffers / shadow regs** preserve ordering per the memory model while allowing progress.
+
+7. What measurements reveal (Fig. 3.4 narrative)
+    - Random access over a growing **working set** shows **three plateaus** (L1-fit, then L2-fit, then DRAM-bound).  
+  From the observed steps, you can infer cache sizes (e.g., **L1 ≈ 2¹³ B**, **L2 ≈ 2²⁰ B** in the cited example).  
+    - When the working set exceeds L2, average cost can jump to **hundreds of cycles**; modifying data further adds **writeback** traffic.
+
+---
+
+### 3.3 CPU Cache Implementation Details
+- Because **every memory location is potentially cacheable** but caches are **tiny relative to DRAM** (often about **1:1000** in size), many distinct memory locations will **compete for the same limited cache slots** when a program’s **working set** is large.
+- This fundamental pressure is the root cause of **evictions and misses** and motivates the cache organization/mapping policies discussed next.
+
+**Key points**
+- **Tiny cache vs huge memory.**  
+  It’s normal for cache capacity to be roughly **~1/1000** of main memory, so **far more lines exist in DRAM than can fit in cache** at once. *(user-provided text)*
+- **Working-set competition.**  
+  If your **working set > cache**, many addresses will **contend** for the same few cache slots, triggering **frequent replacements**. *(user-provided text)*
+- **Why this matters.**  
+  The contention translates to **higher miss rates** and **more trips to DRAM**, which are orders of magnitude slower than L1/L2 hits.
+- **What comes next.**  
+  This pressure is exactly why caches use **line-based fills**, **sets**, and **placement/replacement policies**—topics typically introduced immediately after this setup.
+
+**Quick, concrete intuition (derived example)**
+- Not from the text—just to visualize the scale.
+- **4 GB DRAM, 4 MB cache ⇒ ~1:1000.**  
+- With **64 B cache lines**:  
+  - DRAM has `4 GB / 64 B ≈ 67,108,864` distinct lines.  
+  - Cache holds `4 MB / 64 B = 65,536` lines.  
+  ⇒ Roughly **1,024 DRAM lines per cache line slot** *on average* competing for residency.
+
+#### 3.3.1 Associativity
+- A cache must be able to hold a copy of **any** memory line, but it’s tiny vs DRAM (often ~**1:1000**), so many lines **compete** for the same slots.
+- A **fully associative** cache lets any line go anywhere (great flexibility) but is **hardware-expensive** (comparators for every entry → impractical for L1/L2/L3).
+- A **direct-mapped** cache is **fast/simple** (one slot per set) but suffers **conflict misses** when many addresses map to the same slot.
+- **Set-associative** caches are the compromise:
+  - each set has multiple “ways” (e.g., 2-, 4-, 8-way…), comparing all tags in a set **in parallel**.
+- Empirically, going from direct-mapped to low associativity (e.g., **2-way**) can cut misses significantly (e.g., **~44%** for an 8 MB L2 in the cited gcc run), with **diminishing returns** beyond ~**8-way** in single-threaded cases;
+  - shared caches (SMT/multicore) **effectively reduce** associativity, so higher associativity or extra levels (shared **L3**) help.
+- Access order matters: **sequential** traversals benefit much more than **random** traversals.
+
+**Key Points**
+- Fully Associative
+  - **Definition:** Any memory line can occupy **any** cache line; **S = 0** (no set index), tag = address bits above the line offset.
+  - **Hardware cost:** Needs a **comparator per cache line** to check all tags in parallel; for a 4 MB L2 with 64 B lines:  
+    - Entries = `4 MiB / 64 B = 65,536` comparators → **impractical** for large caches.
+  - **Reality:** Used only for **very small** structures (e.g., some **TLBs**) with **dozens** of entries.
+
+- Direct-Mapped
+  - **Definition:** Each address maps to **exactly one** line in the cache.  
+  - **Indexing:** Example 4 MB/64 B → 65,536 entries → use **bits 6..21** as the index (offset **O=6** for 64 B lines).  
+  - **Pros:** **Fast**, **simple**, **one comparator**.  
+  - **Cons:** Prone to **conflict misses** if many hot addresses share the same index bits.
+
+- Set-Associative (the usual choice)
+  - **Definition:** The cache is split into **sets**; each set holds **N ways** (N cached lines for the same set index). For a request, all **N tags** are compared **in parallel** within the indexed set.
+  - **Example (from text):** 4 MB L2, 64 B lines, **8-way** associativity:  
+    - Total entries: `4 MiB / 64 B = 65,536`  
+    - Sets: `65,536 / 8 = 8,192` → **S = log₂(8192) = 13** set-index bits  
+    - Offset: **O = log₂(64) = 6**  
+    - **Tag bits T** (for a 32-bit address): `32 − S − O = 32 − 13 − 6 = 13`
+  - **Hardware:** Only **N comparators** (one per way) per access; scales well as cache capacity grows by adding **columns** (entries), not more **rows** (ways), unless associativity is increased.
+
+**Performance Findings (from the provided text)**
+- **Associativity reduces misses (up to a point).**  
+  In the gcc experiment (Table 3.1 / Fig. 3.8), for an **8 MB** L2 with 32 B lines, moving from **direct-mapped → 2-way** cut L2 misses by **~44%**. Gains beyond **~8-way** are typically **small** in **single-threaded** workloads.
+- **Shared caches & SMT/Multicore.**  
+  With **hyper-threading** (threads share L1) and **multi-core** (often shared L2/L3), effective associativity per thread **drops** (roughly halves with two threads, quarters with four), so **higher associativity** or adding a **shared L3** helps avoid conflict.
+- **Cache size vs working set.**  
+  Benefits scale with **working set** size and **address distribution**. In the cited run (peak WS ≈ **5.6 MiB**), a **16 MiB** cache still shows some conflict effects (hence some benefit from associativity), but going to **32 MiB** would likely offer **negligible** additional benefit for *that* workload. As workloads **grow**, larger caches **regain** value.
+- **Access order matters (Fig. 3.9).**  
+  Two tests:  
+  1. **Sequential** (follow pointers in **memory order**) → much better cache behavior.  
+  2. **Random** (pointer-chasing in **random order**) → many misses; associativity helps, but access locality dominates.
+
+**Rules of Thumb (per the text)**
+- **Large caches:** Fully associative is **impractical**; **set-associative** is standard.  
+- **Associativity gains:** Biggest jump is **DM → 2-way**; **diminishing returns** beyond **~8-way** (single-threaded).  
+- **Shared caches:** Effective associativity **drops** with **more threads/cores** sharing → consider **higher associativity** or a **shared L3**.
+
+**Practical Implications (for your code)**
+- **Order your accesses** (make them sequential/blocked) to avoid conflict-heavy patterns.  
+- If random/pointer-chasing is unavoidable, **increase locality** (e.g., **pool/arena allocations** to pack related nodes) and consider **software prefetching**.  
+- On SMT/multicore, **avoid false sharing**; separate hot data per thread to prevent extra conflicts in shared caches.
+
+#### 3.3.2 Measurements of Cache Effects
+- All figures are produced by a synthetic benchmark that builds a **circular singly-linked list** over an array of fixed-size elements.
+- The list order is either **sequential (memory order)** or **random**.
+- The program always advances via the **pointer field** (even for sequential layouts), so each step is a **pointer chase**.
+- The element includes a configurable **payload (`pad`)** to set the element size and thus the **working set** and **cache-line footprint**.
+- Runs use **read-only** or **read-modify** variants to expose the cost of **write-allocate** and **writeback**.
+- A working set declared as **2^N bytes** contains exactly `2^N / sizeof(struct l)` elements; with **NPAD=7**, `sizeof(struct l)` is **32 B** on 32-bit and **64 B** on 64-bit systems.
+
+```c
+struct l {
+  struct l *n;  // next pointer (always used to advance)
+  long int pad[NPAD];  // payload to control element size
+};
+```
+
+**How the workloads are constructed**
+-	Topology: array of struct l elements; the n pointers are wired into a circular list.
+-	Traversal order:
+  -	Sequential: the n pointers are arranged so visiting n follows physical memory order (lower part of Fig. 3.9).
+  -	Random: the n pointers form a random permutation (upper part of Fig. 3.9).
+-	Operation type: either read-only (touch data) or read-modify (write), to surface dirty-line and writeback costs.
+-	Pointer chasing always: even in the sequential case the benchmark dereferences the pointer, rather than indexing i+1. This:
+  -	Forces a true data dependency between steps.
+  -	Reduces artificial compute overlap and makes latency/miss effects visible.
+  -	Keeps the control flow identical across sequential vs random configurations.
+
+**Working set sizing & element count**
+- Definition: Working set of `2^N` bytes `⇒` number of elements
+- Examples:
+  - `32-bit, NPAD=7 → sizeof=32 B`
+    - `2^20 B (1 MiB) ⇒ 2^20 / 32 = 32,768 elements`
+  - `64-bit (LP64), NPAD=7 → sizeof=64 B`
+    - `2^20 B ⇒ 2^20 / 64 = 16,384 elements`
+
+**Why these choices expose cache behavior**
+- Cache-line footprint: with a 64-B line:
+  - 32-bit/sizeof=32 B ⇒ 2 elements/line → sequential walk often reuses the same line (better locality).
+  - 64-bit/sizeof=64 B ⇒ 1 element/line → sequential walk still benefits from streaming prefetch, but no intra-line reuse.
+- Sequential vs random:
+  - Sequential: maximizes spatial locality and enables hardware prefetch → higher sustained bandwidth, fewer activations.
+  - Random: defeats prefetch & locality → higher miss and activate/precharge frequency; stresses associativity.
+- Read vs write:
+  - Read-only shows hit/miss latency and bandwidth ceilings.
+  - Writes add write-allocate (fetch on store), create dirty lines, and incur writeback on eviction → higher effective cost.
+- Scaling working set: sweeping 2^N bytes reveals plateaus/steps (L1-fit → L2-fit → DRAM-bound), letting you infer cache sizes.
+
+##### Single Threaded Sequential Access
