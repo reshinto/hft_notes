@@ -167,7 +167,7 @@ memory (RAM)**, smarter **memory controllers**, **CPU caches**, and **Direct mem
 
 ### DRAM Access Technical Details
 
-- **SDRAM/DDR are clocked (synchronous).** A read = **RAS (row)** → **tRCD** → **CAS (column)** → **CL (CAS latency)** → **burst** on DQ. Precharge (**tRP**) and **tRAS** gate when the next row can start. *(Fig. 2.8–2.9)*
+- **SDRAM/Double Data Rate (DDR) are clocked (synchronous).** A read = **RAS (row)** → **tRCD** → **CAS (column)** → **CL (CAS latency)** → **burst** on DQ. Precharge (**tRP**) and **tRAS** gate when the next row can start. *(Fig. 2.8–2.9)*
 - **Throughput vs latency:** The bus can burst at high rates, but **gaps from tRCD/tRP/tRAS** slash sustained bandwidth unless accesses reuse open rows and burst multiple words.
 - **Refresh matters:** DRAM must refresh about **every 64 ms**; with **8192 rows** that’s ~**7.8125 µs** between refreshes on average, blocking access to the refreshed row.
 - **Generations:** **SDR → DDR1 (double data rate) → DDR2 (faster bus + 4-bit I/O buffer) → DDR3 (lower V, 8-bit I/O buffer)**. Names (PC/DDR-xxxx) reflect **effective** rates.
@@ -178,7 +178,7 @@ memory (RAM)**, smarter **memory controllers**, **CPU caches**, and **Direct mem
 - **Row open:** Put **row address** on Address bus, **lower RAS**.  
 - **tRCD:** Wait **RAS-to-CAS delay** cycles.  
 - **Column select:** Put **column address**, **lower CAS**.  
-- **CL:** Wait **CAS Latency** cycles, then **data burst** appears on **DQ** (1 word/cycle for SDR, 2 for DDR).  
+- **CL:** Wait **CAS Latency** cycles, then **data burst** appears on **DQ** (1 word/cycle for Single Data Rate (SDR), 2 for DDR).  
 - **Burst length:** Controller chooses 2/4/8 words to amortize setup; can issue **additional CAS** to the same open row (subject to **Command Rate** Tx).  
 - **Key insight:** Row reuse (keeping it “open”) minimizes RAS work; random row switches amplify latency.
 
