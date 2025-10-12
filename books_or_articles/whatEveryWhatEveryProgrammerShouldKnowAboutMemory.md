@@ -207,3 +207,9 @@
 - **Sense amplifier:** Circuit that decides 0 vs 1 from tiny charge differences and **restores** the cell after read.   
 - **RAS / CAS:** **R**ow **A**ddress **S**trobe, **C**olumn **A**ddress **S**trobe; the two-phase addressing for DRAM. 
 - **RC time constant:** Product of **resistance × capacitance**; sets the speed of charging/discharging. 
+
+#### Conclusions
+- Not all memory is SRAM for cost/power reasons.
+- Cells must be selected and pins/lines drive cost across controller/board/module/chip.
+- Read/write results take time to become valid due to physical RC limits and protocol timing.
+- SRAM is used for caches (size-limited but fast); DRAM is used for main memory (large but slower).
