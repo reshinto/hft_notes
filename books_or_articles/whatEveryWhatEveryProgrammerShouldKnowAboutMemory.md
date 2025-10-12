@@ -19,7 +19,8 @@
 
 4. **Storage vs memory solutions**  
    - **Storage:** OS page cache and drive caches (software-heavy).  
-   - **Memory:** Needs **hardware**: faster/parallel **RAM**, smarter **memory controllers**, **CPU caches**, and **DMA**.
+   - **Memory:** Needs **hardware**: faster/parallel **Random-access
+memory (RAM)**, smarter **memory controllers**, **CPU caches**, and **Direct memory access (DMA)**.
 
 5. **Core hardware levers you should know**  
    - **RAM design:** affects peak bandwidth/parallelism.  
@@ -39,8 +40,6 @@
 - Awareness that **data layout and access order** can dominate performance.
 - A checklist mindset for writing **cache-cooperative code** (you’ll see the “how” in later sections of the paper).
 
-### Cheat Notes (for quick recall)
-
 #### Ultra-short One-Liners
 - **Bottleneck:** *Data arrival beats instruction speed.*  
 - **Caches:** *Fast only if you feed them right.*  
@@ -48,30 +47,12 @@
 - **Focus:** *CPU caches + Linux details.*  
 - **Rule of thumb:** *“Usually,” not “always.” Measure!*
 
-#### Flashcards
-
-- **Q:** Why were CPU caches invented?  
-  **A:** To bridge the widening **CPU–DRAM speed gap**.
-
-- **Q:** Can caches fix performance without code changes?  
-  **A:** **No.** They depend on **locality** (layout + access pattern).
-
-- **Q:** What mitigates storage slowness?  
-  **A:** **OS page cache** and device caches (software-centric).
-
-- **Q:** What mitigates memory slowness?  
-  **A:** **RAM design**, **memory controllers**, **CPU caches**, **DMA** (hardware-centric).
-
-- **Q:** Which OS specifics does the paper use?  
-  **A:** **Linux only**.
-
 #### Quick Checklist (use while coding)
 - [ ] **Access data sequentially** where possible (spatial locality).  
 - [ ] **Reuse hot data soon** (temporal locality).  
 - [ ] **Pack/align structures** to reduce wasted cache lines.  
 - [ ] **Batch work** to reduce random access and cache thrash.  
 - [ ] **Measure** on your hardware; avoid one-size-fits-all assumptions.
-
 
 ## Commodity Hardware Today
 - **Scale is horizontal.** Data centers favor many commodity servers over a few specialized machines due to cheap, fast networks. 
@@ -84,9 +65,7 @@
   2) **Integrated memory controllers** in each CPU → **local RAM per CPU**, higher aggregate bandwidth but **NUMA** effects for remote RAM. *(Fig. 2.3)*
 - **NUMA reality:** Accessing **remote** memory (via inter-CPU links) costs extra time (“**NUMA factors**”); topologies may have multiple “hops”/levels. 
 
-### Key Ideas & Why They Matter
-
-#### 1) Northbridge/Southbridge (Fig. 2.1)
+### 1) Northbridge/Southbridge (Fig. 2.1)
 **What it is:**  
 - CPUs connect via **FSB** to the **Northbridge** (which includes the **memory controller**); **Southbridge** handles I/O (PCI/PCI-E, SATA, USB; legacy PATA/1394/serial/parallel). 
 
@@ -95,7 +74,7 @@
 - **Device DMA** now bypasses the CPU (good) but **competes** with CPUs for **Northbridge bandwidth** (contention).  
 - **Older single-bus RAM** disallows parallel access; newer designs add **multiple channels**. 
 
-#### 2) Northbridge with External Memory Controllers (Fig. 2.2)
+### 2) Northbridge with External Memory Controllers (Fig. 2.2)
 **What it is:**  
 - Several **external memory controllers (MCs)** attach to Northbridge, each with its **own memory bus**. 
 
@@ -104,7 +83,7 @@
 - **Concurrent** access across **different banks** reduces delay, especially with multiple CPUs.  
 - Primary limit shifts to **Northbridge’s internal bandwidth** (noted as “phenomenal” for this Intel design). 
 
-#### 3) CPUs with Integrated Memory Controllers (Fig. 2.3)
+### 3) CPUs with Integrated Memory Controllers (Fig. 2.3)
 **What it is:**  
 - **Each CPU** has a **built-in memory controller** and **local RAM** (e.g., AMD Opteron; Intel later via CSI/Nehalem). 
 
@@ -117,29 +96,12 @@
   - **Remote** RAM: must traverse **inter-CPU interconnects**; each hop adds cost (**“NUMA factor”**).  
   - Topologies can have **multiple levels/hops**; some systems group CPUs into **nodes** with cheap intra-node and expensive inter-node access. 
 
-#### 4) Memory Channels & Access Patterns
+### 4) Memory Channels & Access Patterns
 - **Bandwidth depends on channels**: old **single bus** vs **dual channel (DDR2)** vs **more channels** (e.g., **FB-DRAM**).  
 - **Northbridge interleaves** accesses across channels.  
 - **Concurrency** (many threads/CPUs/DMA) **and access pattern** (how you touch memory) **strongly affect latency/bandwidth**.
 
-### Programmer’s Cheat Notes (Memory Recollection)
-
-#### Architecture Mnemonics
-- **NB/SB era:** *“Everything through Northbridge.”* (CPU↔CPU, CPU↔RAM, CPU↔Southbridge devices)  
-- **External MCs:** *“More controllers, more lanes.”*  
-- **Integrated MCs:** *“Local first; remote costs.”* (NUMA factors)
-
-#### Quick Q&A
-- **Q:** Why can DMA still slow you down?  
-  **A:** It **competes** with CPUs for **Northbridge bandwidth** even though it saves CPU cycles. 
-
-- **Q:** How do newer RAM setups raise bandwidth?  
-  **A:** **More channels** (dual, FB-DRAM), **interleaving** across them. 
-
-- **Q:** What is NUMA in one line?  
-  **A:** **Different memory access times** depending on whether the RAM is **local** or **attached to another CPU**, with extra **hop costs**. 
-
-#### “Think-Before-You-Code” Implications
+### “Think-Before-You-Code” Implications
 - Expect **contention** when many cores/threads and devices **hit memory simultaneously**.  
 - **Access pattern matters** (channel interleaving benefits sequential/structured layouts).  
 - On **NUMA**, prefer **locality** (keep working threads/data near their CPU); avoid unnecessary **remote** accesses.
@@ -183,21 +145,6 @@
   2) **CAS** selects a **column**;  
   **Multiplexing halves external address pins**; timing signals indicate RAS/CAS phases. *(Fig. 2.7)*
 - **Timing matters:** specs define **how long after RAS/CAS data appears** and **how long data must be held** for writes (caps don’t fill/drain instantly). 
-
-#### Mnemonics
-- **“6T = Stable & Speedy; 1T1C = Cheap & Leaky.”**
-- **“RAS then CAS”** — *Row first, then Column.*
-- **“RC rules DRAM.”** — physics sets the latency.
-
-#### Flashcards
-- **Q:** Why not make all RAM SRAM?  
-  **A:** **Cost & power**: SRAM uses **6 transistors/bit** and needs **constant power**; DRAM is **far denser/cheaper**. 
-- **Q:** Why must DRAM refresh?  
-  **A:** **Leakage** of the tiny capacitor’s charge; typical **~64 ms** refresh window. 
-- **Q:** What makes DRAM reads slower than SRAM?  
-  **A:** **RC charge/discharge**, **sense-amp** evaluation, **restore after read**, and **refresh interference**. 
-- **Q:** How does address multiplexing help?  
-  **A:** Cuts **pin count** and **demux size** by sending **row then column**. 
 
 #### Practical Implications
 - **Expect latency** from DRAM due to **RC + RAS/CAS + refresh**; organize software for **good locality** and **burst/row reuse** (later sections).
@@ -280,27 +227,10 @@
 - **Aggregate bandwidth:** Example table compares **~10 GB/s (DDR2)** vs **~40 GB/s (FB-DRAM)** for a controller configuration.  
 - **Trade-offs:** Additional **per-DIMM hop latency** and **higher energy** for the serial chip; still advantageous for large-memory servers.
 
-#### 7) Other Main-Memory Users (DMA)
+### Other Main-Memory Users (DMA)
 - **DMA devices** (NICs, storage) read/write RAM directly, **competing** with CPUs for memory/FSB bandwidth → potential extra stalls.  
 - **NUMA mitigation:** With per-CPU memory (Fig. 2.3), place compute on nodes away from heavy-DMA nodes; even attach Southbridges per node to distribute load.  
 - **Integrated graphics using system RAM** adds heavy, frequent traffic and can increase latency; avoid for performance-critical systems.
-
-#### Mnemonics
-- **“Row then Col” → RAS then CAS → **tRCD** then **CL****  
-- **“Close before new row” → Precharge = **tRP****  
-- **“Row must live long enough” → **tRAS****  
-- **“Burst to win” → longer bursts amortize setup**  
-- **“Refresh happens” → expect occasional stalls (~64 ms/row window)**
-
-#### Flashcards
-- **Q:** What do the five timing numbers `w-x-y-z-T` mean?  
-  **A:** `CL, tRCD, tRP, tRAS, CommandRate`.
-- **Q:** Why does DDR increase bandwidth but not intrinsic latency?  
-  **A:** It transfers **more per cycle** (edges / faster bus / wider I/O buffer), but **RC physics and RAS/CAS** still set latency.
-- **Q:** Why can “random” access crush bandwidth?  
-  **A:** Each new row needs **precharge (tRP)** + **activate (tRCD)** + **CL**, leaving the bus idle between bursts.
-- **Q:** What’s the refresh interval per row for 8192 rows?  
-  **A:** **64 ms / 8192 ≈ 7.8125 µs**.
 
 #### Quick Math
 - **Theoretical burst:** `8 B × 800 MHz = 6.4 GB/s` (quad-pumped 200 MHz bus).
