@@ -145,3 +145,65 @@
 - On **NUMA**, prefer **locality** (keep working threads/data near their CPU); avoid unnecessary **remote** accesses.
 
 ### RAM Types
+- **Two main RAM types in one machine:** **SRAM** (fast, costly) + **DRAM** (dense, cheap). We use **SRAM for caches** and **DRAM for main memory** because of **cost and power**.
+- **SRAM cell (6T):** flip-flop of cross-coupled inverters → **stable state** as long as power (Vdd) is present; **no refresh**, **near-instant read**, but **6 transistors per bit** and continuous power. *(Fig. 2.4)*
+- **DRAM cell (1T+1C):** **capacitor** holds charge = bit; **destructive read**, must **refresh** (typically **every ~64 ms**); **slower** due to **RC charge/discharge** and **sense amplifier** steps, but **tiny area per bit** ⇒ far cheaper & denser. *(Fig. 2.5–2.6)*
+- **Addressing DRAM:** cells are in **rows × columns**; controller uses **RAS** (row) then **CAS** (column) to cut pin count via **address multiplexing**. Reads/writes obey timing windows determined by RC physics. *(Fig. 2.7)*
+- **Key consequences:** more pins/lines ⇒ cost; **results are not immediate**; access/refresh timings dominate performance. 
+
+#### Static RAM (SRAM) — 6T cell
+- **Structure:** 6 transistors (M₁–M₆); core is **two cross-coupled inverters** (M₁–M₄). *(Fig. 2.4)*
+- **Operation:** Raise **WL** to read; **BL/BL̄** carry the bit immediately. To write, drive BL/BL̄, then raise WL.
+- **Properties:**  
+  - **Fast read**, **no refresh**; **rectangular (sharp) signals**.  
+  - **Always powered** to keep state.  
+  - **Area/cost high** (≈6 transistors/bit).
+
+#### Dynamic RAM (DRAM) — 1T1C cell
+- **Structure:** 1 **transistor** (M) + 1 **capacitor** (C). *(Fig. 2.5)*
+- **Operation:** Raise **AL** to access; **DL** senses charge (read) or supplies charge (write).
+- **Complications:**  
+  - **Leakage**: tiny caps (femto-farad range) lose charge; **refresh ~ every 64 ms**; refresh blocks access.
+  - **Destructive read**: read depletes C; must **restore** via sense amp feedback. 
+  - **Slow edges**: charge/discharge follow **RC** curves (below) ⇒ extra delay and energy.
+- **Advantage:** **Much smaller, simpler, denser** than SRAM ⇒ **dramatic cost difference** ⇒ chosen for main memory.
+
+#### RC Timing (why DRAM is slower)
+- **Equations (from text):**  
+  - Charging: `Q_charge(t) = Q0 · (1 − e^(−t/RC))`  
+  - Discharging: `Q_discharge(t) = Q0 · e^(−t/RC)`  
+  - **Implication:** it takes several **RC** time constants for the sense amp to see a reliable 0/1; signals are not instantaneous. *(Fig. 2.6)*
+
+#### How DRAM Is Addressed (RAS/CAS)
+- **Problem:** Directly exposing all address lines is impractical (e.g., 1 Gbit ⇒ ~30 lines; huge demux & pin cost). 
+- **Solution:** Arrange cells in **rows × columns**; send address in **two parts**:  
+  1) **RAS** selects a **row**;  
+  2) **CAS** selects a **column**;  
+  **Multiplexing halves external address pins**; timing signals indicate RAS/CAS phases. *(Fig. 2.7)*
+- **Timing matters:** specs define **how long after RAS/CAS data appears** and **how long data must be held** for writes (caps don’t fill/drain instantly). 
+
+#### Mnemonics
+- **“6T = Stable & Speedy; 1T1C = Cheap & Leaky.”**
+- **“RAS then CAS”** — *Row first, then Column.*
+- **“RC rules DRAM.”** — physics sets the latency.
+
+#### Flashcards
+- **Q:** Why not make all RAM SRAM?  
+  **A:** **Cost & power**: SRAM uses **6 transistors/bit** and needs **constant power**; DRAM is **far denser/cheaper**. 
+- **Q:** Why must DRAM refresh?  
+  **A:** **Leakage** of the tiny capacitor’s charge; typical **~64 ms** refresh window. 
+- **Q:** What makes DRAM reads slower than SRAM?  
+  **A:** **RC charge/discharge**, **sense-amp** evaluation, **restore after read**, and **refresh interference**. 
+- **Q:** How does address multiplexing help?  
+  **A:** Cuts **pin count** and **demux size** by sending **row then column**. 
+
+#### Practical Implications
+- **Expect latency** from DRAM due to **RC + RAS/CAS + refresh**; organize software for **good locality** and **burst/row reuse** (later sections).
+- **Results aren’t instant:** even after issuing a read, **data takes time** to be valid; writes also need **hold time**. 
+- **Hardware cost drivers:** **address lines/pins** significantly affect controller/module cost. 
+
+#### Tiny Glossary (from the excerpt)
+- **WL / AL / BL / DL:** Word/Access/Data lines controlling reads/writes. 
+- **Sense amplifier:** Circuit that decides 0 vs 1 from tiny charge differences and **restores** the cell after read.   
+- **RAS / CAS:** **R**ow **A**ddress **S**trobe, **C**olumn **A**ddress **S**trobe; the two-phase addressing for DRAM. 
+- **RC time constant:** Product of **resistance × capacitance**; sets the speed of charging/discharging. 
