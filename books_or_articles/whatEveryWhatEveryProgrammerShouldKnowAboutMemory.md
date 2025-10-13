@@ -1283,4 +1283,104 @@ struct l {
 
 - **Takeaway:** For large, memory-bound workloads, faster FSB/DRAM yields near-proportional speedups; otherwise, gains are minimal. Always check motherboard support and overall memory topology before upgrading.
 
-## Virtual Memory
+## 4 Virtual Memory
+
+---
+
+### 4.1 Simplest Address Translation
+
+---
+
+### 4.2 Multi-Level Page Tables
+
+---
+
+### 4.3 Optimizing Page Table Access
+
+#### 4.3.1 Caveats Of Using a TLB
+
+#### 4.3.2 Influencing TLB Performance
+
+---
+
+### 4.4 Impact Of Virtualization
+
+## 5 NUMA Support
+
+--
+
+### 5.1 NUMA Hardware
+
+---
+
+### 5.2 OS Support for NUMA
+
+---
+
+### 5.3 Published Information
+
+---
+
+### 5.4 Remote Access Costs
+
+## 6 What Programmers Can Do
+
+---
+
+### 6.1 Bypassing the Cache
+
+---
+
+### 6.2 Cache Access
+
+#### 6.2.1 Optimizing Level 1 Data Cache Access
+
+#### 6.2.2 Optimizing Level 1 Instruction Cache Access
+
+#### 6.2.3 Optimizing Level 2 and Higher Cache Access
+
+#### 6.2.4 Optimizing TLB Usage
+
+---
+
+### 6.3 Prefetching
+
+#### 6.3.1 Hardware Prefetching
+
+#### 6.3.2 Software Prefetching
+
+#### 6.3.3 Special Kind of Prefetch: Speculation
+
+#### 6.3.4 Helper Threads
+
+#### 6.3.5 Direct Cache Access
+
+---
+
+### 6.4 Multi-Thread Optimizations
+
+#### 6.4.1 Concurrency Optimizations
+
+#### 6.4.2 Atomicity Optimizations
+
+#### 6.4.3 Bandwidth Considerations
+
+---
+
+### 6.5 NUMA Programming
+
+#### 6.5.1 Memory Policy
+
+#### 6.5.2 Specifying Policies
+
+#### 6.5.3 Swapping and Policies
+
+#### 6.5.4 VMA Policy
+
+#### 6.5.5 Querying Node Information
+
+#### 6.5.6 CPU and Node Sets
+
+#### 6.5.7 Explicit NUMA Optimizations
+
+#### 6.5.8 Utilizing All Bandwidth
