@@ -1040,3 +1040,247 @@ struct l {
 ---
 
 ### 3.4 Instruction Cache
+- **Code is cached too (L1i), but is usually less troublesome than data caching (L1d).**  
+  Reasons given:
+  - Executed code size correlates with **fixed problem complexity**.
+  - **Compilers** generate instructions and typically follow good codegen rules.
+  - **Control flow is more predictable** than data access; CPUs exploit this with **branch prediction** and **prefetching**.
+  - **Instruction streams have strong spatial & temporal locality**.
+- **Deep pipelines make fetch/branch behavior critical.**  
+  - Modern CPUs execute instructions in **stages** (decode → prepare operands → execute).  
+  - **Mispredicted branches** or **late instruction fetches** **stall** the pipeline and take time to refill.
+- **Branch prediction & (for CISC) decode costs drive L1i design.**  
+  - On x86/x86-64, decoding can be expensive; the text notes that some designs **cache decoded instructions in L1i (“trace cache”)** to skip early pipeline steps on a hit.  
+  - **Lower levels (L2+) are unified** (code + data) and **store raw bytes**, not decoded instructions.
+- **Practical guidance (most done by the compiler):**
+  1. **Keep code small** when possible (exceptions: e.g., software pipelining may justify larger code).
+  2. **Aid prefetching** via **code layout** and, where appropriate, **explicit prefetch hints**.
+
+**Key Points**
+- **Instruction caches are generally “easier” than data caches.**  
+  Code size and flow are more deterministic → **better locality and predictability**, so hardware prefetchers and predictors work well.
+- **Pipeline depth amplifies fetch/branch penalties.**  
+  Longer pipelines (historically >20 stages) mean a **bigger recovery cost** on mispredicts or slow fetches.
+- **Trace cache (decoded I-cache) concept.**  
+  For CISC (x86/x86-64), caching **decoded uops** in L1i can **skip decode** on hits and **reduce stalls** after mispredictions.
+- **Unified L2/L3 caches hold code and data together.**  
+  These levels **cache instruction bytes**, not decoded uops; they feed the L1i/L1d.
+- **Best results come from good codegen and layout.**  
+  Compilers already optimize for **compactness**, **layout**, and **predictable control flow**; programmers mainly **choose flags/techniques** that enable these.
+
+**Minimal To-Do for Programmers**
+- **Enable/choose compiler options** that favor **code size** and **hot-path layout** (e.g., function reordering, hot/cold splitting).
+- **Structure control flow** (reduce unpredictable branches, hoist invariant branches, use likely/unlikely hints if available).
+- **Measure** with your workload; ensure any manual unrolling/pipelining **doesn’t blow I-cache** and degrade performance.
+
+#### 3.4.1 Self Modifying Code
+- **What & why (then vs now):** In early systems with extremely tight memory, programs sometimes **modified their own code** to save space.
+  - Today SMC appears rarely—mostly for niche performance hacks or in **security exploits**.
+- **Why to avoid:** SMC **breaks I-cache assumptions** and **hurts performance/correctness**:
+  - Decoded-instruction caches (**trace caches**) can’t be used on modified code.
+  - If an instruction already **entered the pipeline** and is changed, the CPU may **flush and restart**, sometimes discarding a large amount of internal state.
+  - **L1i uses a simplified SI (Shared/Invalid) coherency model**, not full MESI, assuming code pages are immutable; when modifications are detected the CPU must make **pessimistic, costly invalidations**.
+- **If you must:** Prefer **separate functions** or alternative designs. If SMC is unavoidable, **bypass the cache on writes** (see section 6.1 in the paper) to reduce I/D-cache interference.
+- **How it’s surfaced on Linux:** Normal toolchains **write-protect code pages**; creating writable code sections requires deliberate link-time changes.
+  - Modern Intel x86/x86-64 CPUs expose **performance counters** that can **count SMC events**, making SMC usage detectable.
+
+**Key Points**
+- **Historical artifact:** SMC arose from **severe memory scarcity**; not a generally valid optimization on modern hardware.
+- **Trace cache invalidation:** Because trace caches store **decoded instructions**, modifying code invalidates those entries → **lost decode work** and more front-end stalls.
+- **Pipeline disruption:** If an instruction gets modified **after fetch/decode**, the CPU may need to **flush the pipeline** and **rebuild state**, wasting cycles.
+- **Instruction-cache coherency model:** L1i commonly uses **SI** rather than **MESI** (based on the near-universal assumption that code is immutable).
+  - When SMC is observed, the CPU must **assume worst-case** and perform **expensive invalidations**.
+- **Safer alternatives:** Prefer **static code paths** (e.g., function variants) over mutating code bytes at runtime.
+  - If absolutely necessary, use **uncached/write-combining** stores for the modifications to **limit D↔I cache hazards** (paper’s §6.1).
+- **Detection on Linux:** Writable code needs **non-default linking tricks**; Intel CPUs provide **counters to identify SMC**, aiding observability.
+
+---
+
+### 3.5 Cache Miss Factors
+**Why cache misses hurt**
+- **Latency gap:** Your text gives a Pentium-M example:  
+  Registers ≤ **1** cycle → **L1 ≈ 3** cycles → **L2 ≈ 14** cycles → **DRAM ≈ 240** cycles.  
+  Under random access, observed costs can climb to **~450+ cycles** due to added effects (e.g., TLB misses, precharge/activation, limited prefetch), far beyond “nominal” DRAM latency.
+- **Bandwidth contention:** When data isn’t sequential, DRAM protocols add **tRCD / CL / tRP / tRAS** gaps; the data bus sits idle between bursts. Concurrent cores/threads and DMA also contend for memory bus bandwidth in the commodity Northbridge/Southbridge designs described earlier.
+- **Write traffic doubles pressure:** Modifying data forces **write-backs** of dirty lines; in streaming updates this can effectively **halve usable bandwidth** (read + write sharing the bus).
+- **TLB effects:** Page-walks add large, **additive** costs before any cache/DRAM access; with large working sets and poor locality, **TLB misses** amplify latency.
+- **Multicore coherency:** MESI/RFO traffic (e.g., two CPUs wanting the **same cache line**) adds stalls and bus traffic; shared buses saturate quickly when several threads prefetch/write concurrently.
+
+**Cost model (as given)**
+- A simple execution-time model in the text (single cache level for intuition):
+  - **Texe ≈ N · [ Tproc + Fmem · ( Ghit·Tcache + (1−Ghit)·Tmiss ) ]**  
+    Where:  
+    *N* = instructions; *Fmem* = fraction that access memory; *Ghit* = cache hit rate; *Tcache/Tmiss* = hit/miss costs.
+- Implication: even small drops in **Ghit** (hit rate) can dominate runtime because **Tmiss ≫ Tcache**.
+
+**What you can do**
+1. Shape access patterns (enable prefetch, fill bursts)
+    - **Make accesses predictable & sequential** so hardware prefetch can overlap latency. The text shows sequential scans staying near **~9 cycles/elem** (prefetch hides L2/DRAM), versus **~450+ cycles** for random.
+    - **Operate in cache-sized tiles/blocks** so the *working set* fits into L1/L2/L3 while you reuse it (spatial & temporal locality).
+    - **Batch loads/stores** to fill whole 64-byte cache lines and DRAM bursts; avoid fine-grained, sparse touches.
+2. Reduce misses before they happen
+    - **Data layout:** arrange arrays-of-structures vs. structures-of-arrays to minimize useless bytes fetched per line (paper discusses line size = **64 B** typical).
+    - **Align data** to cache-line boundaries to avoid crossing lines/pages mid-access.
+    - **Avoid pointer-chasing/randomization** in hot loops where feasible; if you must, confine randomness to **local blocks** to limit TLB churn (the text shows big wins when randomization is limited to page blocks).
+3. Mind the TLB
+    - **Use larger pages when meaningful** so fewer distinct pages are touched during a hot loop; the text explicitly advises using page sizes "as large as meaningful".
+    - **Process memory in page-friendly chunks** to keep the TLB’s small, fast cache effective.
+4. Writes & bandwidth
+    - **Prefer read-mostly sharing; avoid multi-writer sharing of the same cache line.** MESI/RFO turn concurrent writes into expensive ownership transfers.
+    - **Stream writes contiguously** so write-backs are efficient and combine well; avoid ping-ponging the same line across cores.
+    - For device memory regions, the text notes **write-combining** can help (special policy for non-RAM regions).
+5. Multicore/NUMA awareness
+    - **Minimize cross-core sharing of hot lines** (each share can trigger invalidations/RFO).
+    - **Place data close to the threads that use it** (NUMA locality) and pin threads appropriately to avoid remote memory penalties described in the NUMA section.
+    - Expect **sub-linear scaling** once working sets exceed the last-level cache; the figures in the text show speedups collapsing when memory bandwidth saturates.
+6. Prefetch consciously
+    - **Let hardware prefetch do its job** by writing loops with simple, forward strides.  
+    - Where applicable, use **software prefetch** to overlap latency further; schedule prefetch far enough ahead but not across page faults.
+7. Measure, don’t guess
+    - The paper’s section 7 introduces tools; modern x86 expose **performance counters** for L1/L2 misses, TLB misses, MESI events, and even self-modifying code. Use them to confirm whether you’re bandwidth- or latency-bound.
+
+#### 3.5.1 Cache and Memory Bandwidth
+- **Method:** A microbenchmark uses SSE (`movaps`) to *load/store 16 B at a time* while sweeping working-set sizes from **1 KB → 512 MB**, measuring sustained **bytes per CPU cycle** for **read**, **write**, and **copy**.
+- **Intel Netburst (P4, 64-bit):**  
+  - **Reads:** At L1d sizes, **~16 B/cycle** (one 16 B load per cycle). Past L1d, drop to **<6 B/cycle**; a step at **2¹⁸ B** shows **DTLB** exhaustion; with sequential access & prefetch the FSB streams at **~5.3 B/cycle**. Prefetched data is **not** propagated into L1d.  
+  - **Writes/Copy:** Never exceed **~4 B/cycle** even for tiny sets → indicative of **L1d write-through** (limited by L2). Once past L2, **~0.5 B/cycle** (≈10× slower than reads).  
+- **Netburst with Hyper-Threading (2 HT threads):**  
+  - Both threads share cache/bandwidth; each effectively gets **~½** of the resources; no practical gain because both are memory-wait limited → **worst-case for HT** here.  
+- **Intel Core 2 (dual-core, shared L2 ~4× P4’s L2):**  
+  - **Reads:** Stay near **~16 B/cycle** across much larger sets; drop appears after **2²⁰ B** (DTLB). This implies **prefetch into L1d** is effective.  
+  - **Writes/Copy:** Within L1d, near **~16 B/cycle** → **write-back**, not write-through. Past L1d/L2, write speeds fall; beyond L2, **reads vs writes differ by ~20×**. Still overall **better than Netburst**.  
+- **Core 2 with 2 threads (one per core, shared L2):**  
+  - **Reads:** Similar to single-thread (minor jitter).  
+  - **Writes/Copy (data fits in L1d):** Performance collapses to **main-memory-like** levels because both threads write the **same locations**, triggering **RFO**/coherency traffic; after L1d evicts to **shared L2**, speed improves (served from L2).  
+  - **Asymptote:** For large sets, each thread ≈ **½** of single-thread bandwidth due to shared FSB.  
+- **AMD Opteron fam 10h (L1d 64 KB, L2 512 KB, shared L3 2 MB):**  
+  - **Single-thread:**  
+    - **Reads:** Can exceed **32 B/cycle** in L1d (processor can retire **2 loads/cycle**). The read curve **flattens quickly** to **~2.3 B/cycle** (prefetch ineffective here).  
+    - **Writes:** ~**18.7 B/cycle** in L1d; then ~**6 B/cycle** (L2), **2.8 B/cycle** (L3), **0.5 B/cycle** (beyond L3).  
+    - **Copy:** Bounded by min(read, write); initially read-limited, later write-limited.  
+- **Opteron with 2 threads:**  
+  - **Reads:** Largely unaffected (per-thread L1d/L2 do their jobs; L3 not heavily prefetched).  
+  - **Writes:** **Shared data must traverse L3**; sharing is **inefficient**—even when the working set fits in L3, costs are higher than an L3 hit. Compared with Core 2’s shared L2 behavior, the Opteron’s write-sharing range is smaller and slower.  
+
+**Key Points**
+- **Reads can be very fast if prefetching is effective.**  
+  Core 2 sustained ~**16 B/cycle** across large ranges because hardware prefetch **streams into L1d**; Netburst’s read stream topped out around **~5.3 B/cycle** with prefetched data **not** landing in L1d.  
+- **Write policy matters (write-through vs write-back).**  
+  Netburst’s L1d behavior indicates **write-through**, capping writes at **~4 B/cycle** and tanking to **~0.5 B/cycle** beyond L2; Core 2’s **write-back** achieves near-optimal **~16 B/cycle** inside L1d.  
+- **DTLB capacity creates visible cliffs.**  
+  Steps around **2¹⁸ B** (Netburst) and **2²⁰ B** (Core 2) correspond to **DTLB exhaustion**, adding per-page overhead even in sequential scans.  
+- **Write-sharing across cores cripples throughput.**  
+  Two cores writing the **same cache lines** trigger **RFO/coherency**; on Core 2, L1d-fitting shared writes behave like main-memory speed until lines reach shared L2; on Opteron, shared writes funnel through **L3** and remain costly.  
+- **Architecture details dominate ceilings.**  
+  Opteron shows **>32 B/cycle** reads in L1d (2 loads/cycle), **~18.7 B/cycle** writes in L1d, but poorer read prefetching beyond L1; Core 2 favors strong read prefetch and write-back; Netburst is limited by write-through and weaker prefetch integration.  
+
+**Verification & Caveats**
+- These are **microbenchmark limits** under **idealized loops** (no compute/use of loaded data for read tests). Real applications will attain **lower** throughput.  
+- Values like **16 B/cycle**, **5.3 B/cycle**, **0.5 B/cycle**, **>32 B/cycle**, **18.7 B/cycle**, and DTLB thresholds (**2¹⁸/2²⁰ B**) are **from your provided figures/text** and are **architecture-specific**.  
+
+#### 3.5.2 Critical Word Load
+- DRAM sends cache lines in **64-bit chunks**; a **64–128 B** line takes **8–16 transfers** (“burst mode”).
+- On a miss, if the needed word is late in the line, you wait longer: each 64-bit beat arrives **~4+ cycles** after the previous.
+- Controllers use **Critical Word First & Early Restart**: fetch the needed word first so the CPU can resume while the rest streams in.
+- This can’t help during **speculative prefetch** (no “critical” word yet), so layout still matters.
+- Measured effect here: with the pointer in the **last** word vs **first**, slowdown is ~**0.7%** once you exceed L2; sequential access suffers slightly more (prefetch interference).
+
+**What’s happening**
+- **Burst fill:** Cache lines are filled in-order by default (8 or 16 x 64-bit beats).  
+- **Miss penalty depends on offset:** If your critical word is beat #8 (or #16), you wait ~7 (or ~15) beats × **4+ cycles** each after the first beat arrives.
+- **Critical Word First / Early Restart:** The memory controller can request the **critical beat first**, returning it early so execution resumes while the remainder fills in the background.
+- **Prefetch caveat:** During hardware prefetches, the controller doesn’t know which word is critical; if a demand load arrives mid-prefetch, you may still wait for the original order.
+
+**Practical takeaways**
+- **Put what you touch first, first.**  
+  Place the most-used pointer/field at the **start** of a 64 B cache line (e.g., structure field order, padding).
+- **Align & pack thoughtfully.**  
+  Cache-line align arrays of structs; avoid pushing the hot field to the tail with accidental padding.
+- **Pointer-chasing layouts:**  
+  For linked structures where `next` is read immediately, keep `next` in the **first 8 bytes**.
+- **Beware prefetch overlap:**  
+  In tight sequential scans where HW prefetch is active, the ~**0.7%** penalty for “hot field last” can show up more.
+- **It’s a small %… that compounds.**  
+  ~1% on a single path can add up across hot loops, multiple levels, and NUMA hops.
+
+#### 3.5.3 Cache Placement
+**What shares what?**
+- **Hyper-threads (SMT):** share *everything but registers* → **L1i/L1d are shared**.
+- **Cores on the same CPU:**
+  - *Early multi-core:* no shared caches beyond each core’s L1.
+  - *Intel Core 2 (dual-core):* **shared L2** across both cores.  
+    *Quad-core variants:* two independent pairs, each pair with its own L2; **no L3**.
+  - *AMD Family 10h:* **private L2 per core + shared L3** (unified).
+ 
+**Pros & cons of sharing**
+- **No shared L2/L3:** good when working sets don’t overlap; less contention.  
+  Downsides: duplicated common code/data (e.g., libc hot paths) wastes cache.
+- **Shared higher-level cache (e.g., Intel shared L2, AMD shared L3):**
+  - Big win if threads **share/overlap data** → effectively larger pool.
+  - But “smart” partitioning can mis-evict and **shrink effective per-core cache** when workloads compete.
+
+**A telling experiment (shared L2 under pressure)**
+- One core continuously writes a fixed **2 MiB** region (½ of a 4 MiB L2).  
+- Second core varies its working-set size and reads/writes another region (no sharing).
+- **Observation:** performance degrades **before** the 1 MiB mark per core; with a writer in the background, the measured core behaves as if it has **≈1 MiB** effective L2, not 2 MiB.  
+  - Pure **eviction pressure** from the sibling core; no RFO traffic (no shared lines).
+
+**Quad-core note (older Core 2 quads)**
+- Implemented as **two dual-core pairs**: each pair shares an L2; inter-pair traffic goes over the **FSB** (no special fast path).  
+- Net: little advantage over two dual-socket dual-cores for cache-sharing behavior.
+
+**Where this is going**
+- More layers: **private L2 + shared L3** is a practical balance.  
+- As cores per socket rise, **cache size & associativity must scale** with sharers; L3 is slower, but that’s acceptable if L2 hits remain high.
+
+**Practical affinity hints (architecture-aware)**
+- **Heavy sharing/overlap:** place threads on cores that **share L2/L3** to increase effective cache footprint.
+- **Independent, bandwidth-heavy or write-heavy:** **separate** onto cores that **don’t share** the next cache level (different L2; if possible, different L3/socket) to avoid thrashing.
+- **SMT caution:** avoid putting two **memory-bound** threads on the **same core** (they fight for L1/L2 and ports).
+- **Mixed workloads:** pair a memory-bound thread with a compute-bound thread on the **same shared cache** to exploit complementary use.
+- **Know your topology:** query it (e.g., Linux `/sys/devices/system/cpu/`, `lscpu`, `hwloc`) and set **CPU affinity** accordingly.
+
+**Quick checklist**
+- Do my threads **share data?** → co-locate on **shared L2/L3**.
+- Do they **stream/write a lot** with little sharing? → **isolate** across caches/sockets.
+- Am I using **hyper-threads** for memory-bound code? → usually **avoid**; prefer real cores.
+- Is effective cache smaller than advertised? → expect **contention** on shared caches; size for **effective**, not theoretical, capacity.
+
+#### 3.5.4 Front Side Bus (FSB) Influence
+- The Front-Side Bus (FSB) is the bandwidth bottleneck once your working set exceeds cache.
+- In tests on two otherwise identical Core 2 systems—one with **DDR2-667** and one with **DDR2-800** (≈+20% clock)—the memory-bound workload achieved up to **~18.2%** speedup at large working sets.
+- Faster RAM/FSB matters far less when the working set fits in cache (e.g., 4 MB L2).
+
+**Why it Matters**
+- **Memory-bound phases** saturate the bus → higher FSB/DRAM data rate = higher sustained throughput.
+- **Cache-resident phases** hide DRAM latency → FSB gains don’t translate to runtime wins.
+
+**When Faster FSB Helps Most***
+- Working set **≫ last-level cache** (L2/L3).
+- Multiple processes/threads all **stress memory** concurrently.
+- Patterns with **high read/write bandwidth** (streaming copies, stencil updates, large scans).
+
+**When It Helps Least**
+- Hot data **fits in L2/L3**.
+- Workloads are **compute-bound** or have excellent locality.
+- Tight loops dominated by **ALU/FPU** with few cache misses.
+
+**Practical Guidance**
+- If memory-bound, **buy bandwidth**: higher-speed DIMMs, **more channels**, and larger **LLC** (L3/L2) if available.
+- Keep buses uncongested in software:
+  - Improve **spatial/temporal locality**.
+  - Use **prefetch** sensibly; batch writes; reduce cross-core **cache ping-pong**.
+- Verify platform support:
+  - **CPU**, **northbridge/motherboard**, and **DIMMs** must all support the higher effective FSB.
+  - Mind timings (**CL/tRCD/tRP**) and population rules (channels/slots).
+
+**Example Result (Representative)**
+
+| System | DRAM Speed | Effective FSB | Observed Gain (large WS) |
+|---|---|---|---|
+| Core 2 A | DDR2-667 | 667 MHz | baseline |
+| Core 2 B | DDR2-800 | 800 MHz | **~+18.2%** |
+
+- **Takeaway:** For large, memory-bound workloads, faster FSB/DRAM yields near-proportional speedups; otherwise, gains are minimal. Always check motherboard support and overall memory topology before upgrading.
+
+## Virtual Memory
