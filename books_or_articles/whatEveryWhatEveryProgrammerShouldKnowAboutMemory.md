@@ -1,5 +1,14 @@
 # What Every Programmer Should Know About Memory
 
+## Table of Contents
+- [Abstract](#abstract)
+- [1 Introduction](#1-introduction)
+- [2 Commodity Hardware Today](#2-commodity-hardware-today)
+- [3 CPU Caches](#3-cpu-caches)
+- [4 Virtual Memory](#4-virtual-memory)
+- [5 NUMA Support](#5-numa-support)
+- [6 What Programmers Can Do](#6-what-programmers-can-do)
+
 ## Abstract
 - Modern CPUs keep getting **faster** and add **more cores**, but most programs are limited by how **quickly data can be fetched from memory**.
 - Hardware helps with techniques like **CPU caches**, yet these mechanisms don’t deliver peak performance **without cache-friendly code**.
@@ -24,7 +33,7 @@
 
 ## 1 Introduction
 - Early computers were **balanced**: CPU, memory, storage, and networking improved together.
-- Once subsystems were optimized independently, **memory and storage lagged**, creating bottlenecks. OSs hid many **storage** delays with software caching, but **main memory** bottlenecks require **hardware** solutions: faster/parallel **RAM**, better **memory controllers**, **CPU caches**, and **Direct memory access (DMA)**.
+- Once subsystems were optimized independently, **memory and storage lagged**, creating bottlenecks. OSs hid many **storage** delays with software caching, but **main memory** bottlenecks require **hardware** solutions: faster/parallel **RAM**, better **memory controllers**, ****, and **Direct memory access (DMA)**.
 - This paper (focused on **commodity hardware** and **Linux**) explains how modern memory subsystems and caches work and what programmers should do to use them effectively—while noting that real machines vary, so statements are often qualified as “usually.”
 
 **Key Points**
@@ -36,7 +45,7 @@
    - **Memory:** Needs **hardware** changes (RAM design/parallelism, controllers, caches, DMA).
 
 3. **Focus of the paper**  
-   Practical guidance on **CPU caches** and **memory controllers**, with **DMA** folded into the big picture, using **commodity hardware** examples.
+   Practical guidance on **** and **memory controllers**, with **DMA** folded into the big picture, using **commodity hardware** examples.
 
 4. **Scope limits**  
    - **Platform:** **Linux-only** for OS specifics.  
@@ -60,7 +69,7 @@
 1. **Section 2 — RAM (technical background)**  
    Deep dive into **DRAM/SRAM** and access timing. *Nice to know; can be skipped initially.* The paper adds **back-references** where needed.
 
-2. **Section 3 — CPU Caches (essential)**  
+2. **Section 3 —  (essential)**  
    Detailed **cache behavior** with graphs (lines, sets, associativity, misses, prefetchers). *Core to understanding performance.*
 
 3. **Section 4 — Virtual Memory (essential)**  
@@ -80,6 +89,8 @@
 
 **Suggested Reading Order (Developer-friendly)**
 1 → **6 →** 3 → 4 → 5 → **(dip into 2 as needed)** → 7 → 8
+
+[back to top](#table-of-contents)
 
 ## 2 Commodity Hardware Today
 - **Scale out > scale up.** Cheap, fast networks make **many commodity machines** more cost-effective than a few specialized boxes.  
@@ -236,7 +247,7 @@
 - Not all memory can be **SRAM** because of **cost/power/area**.
 - **DRAM** cells must be **individually selected** and accessed through limited **address lines**, whose count drives the **cost/complexity** of controllers, boards, modules, and chips.
 - **Reads/writes aren’t instantaneous**—DRAM physics and protocol introduce **non-zero latency**.
-- Practical upshot: SRAM is used in **CPU caches** (small, fast, directly addressed), while **DRAM** is used for **main memory**.
+- Practical upshot: SRAM is used in **** (small, fast, directly addressed), while **DRAM** is used for **main memory**.
 - SRAM speed depends on design effort and can range from **near-core speed** to **1–2 orders of magnitude slower** than the CPU core.
 
 **Key Points**
@@ -253,7 +264,7 @@
   It **takes time** before read/write results are valid due to DRAM cell physics and protocol timing. *(§2.1.4)*
 
 - **Where SRAM is used (and how fast).**  
-  **CPU caches/on-die SRAM** are **directly addressed** and kept small; **SRAM max speed** depends on design effort and can be **slightly slower than the core** up to **10–100× slower**. *(§2.1.4)*
+  **/on-die SRAM** are **directly addressed** and kept small; **SRAM max speed** depends on design effort and can be **slightly slower than the core** up to **10–100× slower**. *(§2.1.4)*
 
 **Practical Implications (for developers)**
 - Expect **non-zero DRAM latency** even for simple accesses.  
@@ -487,7 +498,9 @@ Example: **2-3-2-8-T1** ⇒ CL=2, tRCD=3, tRP=2, tRAS=8, Command Rate=T1.
 - **Batch I/O** and **align buffers** to be cache-/channel-friendly; avoid unnecessary cache pollution by DMA (later sections discuss APIs/techniques).  
 - For performance builds, prefer **dedicated VRAM** GPUs over shared-memory graphics.
 
-## CPU Caches
+[back to top](#table-of-contents)
+
+## 3 CPU Caches
 - CPU cores have sped up far faster than DRAM. Making DRAM as fast as cores is **technically possible but economically infeasible**, so systems pair a **small amount of fast SRAM** (as **CPU caches**) with large, cheap **DRAM**. Mapping SRAM as a special OS-managed address range would drown in **software overhead and portability issues**.
 - Instead, processors **transparently cache** recently/nearby data, exploiting **temporal** and **spatial locality**.
 - Because caches are much smaller than main memory (often ~**1/1000** the size), performance depends on **smart replacement and prefetching**—and on programmers writing **cache-friendly code**.
@@ -1283,6 +1296,8 @@ struct l {
 
 - **Takeaway:** For large, memory-bound workloads, faster FSB/DRAM yields near-proportional speedups; otherwise, gains are minimal. Always check motherboard support and overall memory topology before upgrading.
 
+[back to top](#table-of-contents)
+
 ## 4 Virtual Memory
 
 ---
@@ -1305,9 +1320,11 @@ struct l {
 
 ### 4.4 Impact Of Virtualization
 
+[back to top](#table-of-contents)
+
 ## 5 NUMA Support
 
---
+---
 
 ### 5.1 NUMA Hardware
 
@@ -1322,6 +1339,8 @@ struct l {
 ---
 
 ### 5.4 Remote Access Costs
+
+[back to top](#table-of-contents)
 
 ## 6 What Programmers Can Do
 
@@ -1384,3 +1403,5 @@ struct l {
 #### 6.5.7 Explicit NUMA Optimizations
 
 #### 6.5.8 Utilizing All Bandwidth
+
+[back to top](#table-of-contents)
