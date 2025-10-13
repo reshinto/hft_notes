@@ -64,7 +64,7 @@
    Detailed **cache behavior** with graphs (lines, sets, associativity, misses, prefetchers). *Core to understanding performance.*
 
 3. **Section 4 — Virtual Memory (essential)**  
-   How **address translation**, **pages/ TLBs**, and protection work; prerequisite for later topics.
+   How **address translation**, **pages/ Translation Look-Aside Buffer (TLB)s**, and protection work; prerequisite for later topics.
 
 4. **Section 5 — NUMA (detailed)**  
    How **non-uniform memory latency** arises and what it means for **thread/data placement**.
@@ -730,3 +730,313 @@ struct l {
 - Scaling working set: sweeping 2^N bytes reveals plateaus/steps (L1-fit → L2-fit → DRAM-bound), letting you infer cache sizes.
 
 ##### Single Threaded Sequential Access
+- A dense, sequential walk over a circular list shows three clear speed plateaus that map to **L1d**, **L2**, and **DRAM** behavior.
+- On this P4: **L1d hits ≈ 4 cycles**; with an effective **hardware prefetcher**, even L2/DRAM fetches can be kept to **≈ 9 cycles** in the tight sequential case.
+- But once the **stride grows** (larger `struct l`), prefetch **can’t keep up** (and can’t cross pages), so costs jump toward **L2 ≈ 28 cycles** and beyond.
+- Separating each element onto its **own page** exposes **TLB capacity** limits (≈ **64 entries** here), which produce a dramatic spike once the working set exceeds the TLB reach.
+- **Writes** add **write-allocate + writeback** traffic; when eviction requires writes, **FSB bandwidth is effectively halved**, doubling observed cycles.
+- Finally, **bigger last-level caches** keep you longer on the “fast plateau,” translating into **substantial real speedups** for sequential-friendly workloads.
+
+**Key Points**
+- Three plateaus = L1d, L2, DRAM (Fig. 3.10)
+  - Plateaus observed at working sets:
+    - **≤ 2¹⁴ B** (fit L1d ≈ **16 KB**): ~**4 cycles** per element.
+    - **2¹⁵–2²⁰ B** (fit L2 ≈ **1 MB**): ~**9 cycles** per element (prefetch hides much of L2 latency).
+    - **≥ 2²¹ B** (beyond L2): still ~**9 cycles** if prefetch remains effective.
+  - Why **9 cycles** (not the raw L2/DRAM latencies)?  
+    **Hardware prefetch** streams the next line; when you arrive, it’s **already in flight/arrived**, so the visible stall is much smaller than nominal L2/DRAM access.
+
+- When stride grows, prefetch falls behind (Fig. 3.11)
+  - Increasing `NPAD` increases **distance** between successive `n` pointers (e.g., 0, 56, 120, 248 B).
+  - **L1d-fit region:** all curves similar (no prefetch needed).
+  - **L2-fit region:** large-stride runs cluster near **~28 cycles** ⇒ **prefetch disabled/ineffective**; every iteration stalls on L2.
+  - **Beyond L2:** curves diverge strongly; larger strides hurt more because:
+    - **Prefetcher does not cross page boundaries**, so many opportunities are lost as stride grows.
+    - Each step has **less time** to overlap memory before the next dependent pointer chase.
+
+- TLB pressure is real (Fig. 3.12)
+  - Two setups with `NPAD=7` (64-B elements):
+    1. **Packed**: 1 cache line per element; **new page every 64 elements**.
+    2. **One element per page**: each iteration hits a **different page**.
+  - Result: the per-page layout shows a **huge spike** when working set reaches **2¹³ B** (which is **128** elements × 64 B; i.e., **128 pages**).  
+    - The spike marks **TLB overflow**; deduced **TLB ≈ 64 entries** on this machine.
+  - Takeaway: **Address translation cost adds** to L2/DRAM cost; with larger elements, **more TLB misses per unit work**.
+
+- Writes double the pain when bandwidth saturates (Fig. 3.13)
+  - Baseline **Follow** (read-only) vs **Inc** (modify current) vs **Addnext0** (read next, then modify current).
+  - Surprise: **Addnext0** can be **faster** than **Inc** (for L2-fit sets) because reading from the “next” element acts like a **forced prefetch**—the next node is **already hot** when you advance.
+  - But once DRAM is active, **write traffic matters**: modified lines must be **written back** on eviction ⇒ **available FSB bandwidth halves** ⇒ observed plateau roughly **doubles** (e.g., ~**28** vs ~**14** cycles in the comparison cited).
+
+- Why bigger last-level caches help (Fig. 3.14)
+  - Compared three CPUs:
+    - P4: **32 KB L1d + 1 MB L2**
+    - P4: **16 KB L1d + 512 KB L2 + 2 MB L3**
+    - Core2: **32 KB L1d + 4 MB L2**
+  - Larger **LLC** keeps the run longer on the **lower plateau**, **doubling** throughput in the 2²⁰-byte region in one P4 comparison. The Core2 with **4 MB L2** is better still.
+  - If your workload can be **tiled to fit** the LLC, the payoff can be **dramatic**.
+
+**Quick Numbers (from the narrative)**
+- **L1d hits:** ~**4 cycles** (P4).
+- **L2-fit, effective prefetch:** ~**9 cycles** per element (sequential stride).
+- **L2 when prefetch can’t keep up (large stride):** ~**28 cycles**.
+- **DRAM raw latency:** **200+ cycles** (hidden well only with streaming prefetch).
+- **TLB capacity (here):** ≈ **64 entries** (spike at 2¹³ B with 1 element/page).
+- **Writeback effect:** dirty evictions **halve effective bandwidth**, **roughly doubling** observed cycles.
+
+**Practical Tips (you can apply)**
+- **Keep strides small** and **walk in memory order**; where possible, **tile** to your LLC.
+- Use **contiguous allocations** (arenas/pools) to avoid unnecessary **page crossings**; consider **huge pages** if appropriate to extend TLB reach.
+- For one-pass writes, use **streaming stores / write-combining** (when safe) to avoid read-for-ownership churn.
+- When you must modify, **batch** and **tile** so that dirty lines are evicted less often.
+- If you control hardware choice, **favor larger LLCs** for scan-heavy or tile-friendly workloads.
+
+#### Single Threaded Random Access
+- Sequential scans let hardware **prefetch** hide most of the **L2/DRAM latency**, yielding low, flat "plateaus."
+- With **random** pointer-chasing, prefetching can’t predict the next line, so the processor suffers **soaring L2 miss rates**, **more L2 traffic per step**, and **TLB thrashing**—pushing per-element cost well beyond the nominal 200–300-cycle DRAM latency (measured **450+ cycles**).
+- Constraining randomness to **blocks of pages** lowers TLB misses and significantly improves performance.
+
+**Key Points**
+- **Prefetch only helps predictable streams.**  
+  With contiguous strides, lines are pulled into **L2→L1d** early, keeping per-element time ≈ **9 cycles** even when data resides beyond L2.
+- **Random access breaks prefetch → costs skyrocket.**  
+  In the randomized list, per-element time rises to **450+ cycles** for large working sets—worse than raw DRAM latency—because speculative prefetches often **fetch the wrong lines** and add contention.
+- **No “plateaus” for random; cost keeps rising.**  
+  Unlike sequential curves (clear L1/L2/DRAM steps), the random curve **doesn’t flatten**; it climbs as the working set grows.
+- **Why it rises: L2 miss rate → 100% & more L2 traffic per step.**  
+  From Table **3.2**:
+  - At **2²² B**, sequential: **~1.78%** L2 misses and **~21.9** L2 uses/iter; random: **~50.0%** misses and **~174.0** L2 uses/iter.  
+  - As the set grows (2²⁹ B), random misses reach **~57.8%** and L2 uses/iter explode (**~141k**), reflecting many failed cache reuses and poor overlap.
+- **TLB misses are a second big driver.**  
+  Random pointer-chasing touches many pages in short succession; the small, very-fast **TLB** overflows, adding translation latency before each cache/memory access.
+- **Evidence via “blocked randomization.”**  
+  Keeping randomness **within page blocks** (e.g., randomize 60 pages at a time) caps the number of **concurrent TLB entries**, improving throughput; as block size grows → performance approaches the “one big randomization” curve. This shows a **large share** of the random-access penalty comes from **TLB pressure** (reported gains **up to 38%** when reducing TLB misses).
+- **NPAD = 7 context.**  
+  With **64-B elements** (NPAD=7 on 64-bit), each step typically uses a new cache line, and prefetchers (which **do not cross page boundaries**) have little room to help in random order.
+
+**Selected numbers (from Table 3.2)**
+
+| Working set | Access | L2 miss rate | L2 uses / iteration |
+|---|---|---:|---:|
+| 2²⁰ B | Sequential | **0.94%** | **5.5** |
+| 2²⁰ B | Random     | **13.42%** | **34.4** |
+| 2²² B | Sequential | **1.78%** | **21.9** |
+| 2²² B | Random     | **50.03%** | **174.0** |
+| 2²⁹ B | Sequential | **4.67%** | **2,889.2** |
+| 2²⁹ B | Random     | **57.84%** | **141,238.5** |
+
+- **Trend:** As the working set doubles, **random** access more than doubles the per-element time, driven by both **more L2 activity** and **higher miss rates**.
+
+**Rules of thumb**
+- Expect **flat plateaus** only for **predictable** access; **random** will **climb**.
+- When random is unavoidable, **bound the randomness** (operate in **page-sized blocks**) to keep the **TLB hot**.
+- Big working sets + random order ⇒ **miss rate → 100%**, **cycles/element explode**.
+
+**Practical implications**
+- **Reshape work** to maximize **predictable** access (stream/tiles) whenever possible.  
+- If you must be random, **batch within page blocks** (or per-NUMA node) to reduce **TLB churn**.  
+- Keep element/page mapping friendly (e.g., avoid scattering each node to a distinct page unless that’s the point of the test).
+
+#### 3.3.3 Write Behavior
+- **Write-through**: every store also writes main memory → simple coherence but **heavy bandwidth** use.
+- **Write-back**: stores mark the cache line **dirty**; memory updated **later** on eviction or opportunistically → **higher performance**, but requires **coherence machinery** so other CPUs see the latest data.
+- **Write-combining (WC)**: hardware **merges multiple writes** to a line before sending to the device/bus → great for **framebuffers / device RAM**.
+- **Uncacheable**: used for **MMIO / special addresses**; **never cache** (device state can change outside CPU).
+- On x86, the kernel selects the policy for ranges (e.g., via **MTRRs**); user code sees coherence **transparently** (kernel may still need **explicit flushes**).
+
+**Key Points**
+1. Coherent caches: two main policies
+    - **Write-through**
+      - **What happens:** CPU updates the cache **and** main memory **immediately** on every write.
+      - **Why it’s simple:** Memory and cache are always in sync → other CPUs/devices can safely read memory.
+      - **Trade-off:** Generates **lots of traffic** on the FSB/memory bus, even for **short-lived** temporaries.
+    - **Write-back**
+      - **What happens:** CPU updates the cache line and sets a **dirty bit**; memory is updated **later** (on eviction or when the CPU finds idle bus time).
+      - **Why it’s fast:** Avoids unnecessary memory writes; can **opportunistically** push lines when the bus is free.
+      - **Coherence wrinkle:** If **another CPU** needs data that’s **dirty** in this CPU’s cache, it **must get it from that cache**, not memory → requires a **coherence protocol** (introduced next in the paper).
+    - **Programmer view:** Both policies are **transparent** to user-level code; the kernel sometimes must **flush caches** explicitly.
+
+2. Special policies for device / non-RAM regions
+    - **Write-combining (WC)**
+      - **Use case:** Device-mapped RAM (e.g., **graphics framebuffers**).
+      - **What it does:** **Combines multiple stores** to a cache line before writing out, so you amortize bus costs across a whole line (ideal for **contiguous pixel rows**).
+      - **Benefit:** Significantly **higher throughput** to device memory vs. writing each store immediately.
+    - **Uncacheable**
+      - **Use case:** **MMIO** or special hard-wired addresses (e.g., a board LED, PCIe BARs).
+      - **Why:** Device state can **change without the CPU**; caching would show **stale data** or delay **observability** (e.g., LED toggles).
+    - **x86 configuration note:** The kernel picks the type per address range (e.g., with **MTRRs**) and can also choose between **write-through** and **write-back** for RAM regions.
+
+**When policies shine (and when they hurt)**
+
+| Policy            | Shines when…                                           | Hurts when…                                         |
+|------------------|---------------------------------------------------------|-----------------------------------------------------|
+| Write-through     | Simple coherence, small shared regions                  | Frequent updates → **excessive bus traffic**        |
+| Write-back        | Many **temporary** or **hot** updates to same lines     | Requires robust **multi-CPU coherence** handling    |
+| Write-combining   | Streaming, **contiguous** device writes (framebuffers)  | Sparse / random stores (less to combine)            |
+| Uncacheable       | **MMIO**, state external to CPU                         | Any workload that expects caching for performance   |
+
+**Practical takeaways**
+- Expect **write-back** for normal RAM on modern CPUs (better performance).
+- Use **WC** mappings for device buffers you **stream-write**.
+- Keep **MMIO** regions **uncached**; read/write them as specified by the device.
+- In multi-CPU contexts, remember: a line **dirty** in one cache must be **sourced from that CPU**, not memory (the paper’s next section covers the protocol).
+
+#### 3.3.4 Multi-Processor Support
+- In multi-CPU/multi-core systems, caches must appear **coherent** without exposing that complexity to user code.
+- Directly peeking into another core’s cache is impractical, so processors use the **MESI** protocol and **snoop** the bus: when a core needs a line that’s **dirty** elsewhere, that line is **transferred** (and memory updated accordingly).
+- The most expensive traffic involves **Request-For-Ownership (RFO)** messages (e.g., on thread migration or true sharing).
+- Coherence latencies depend on system fan-out and interconnect delays, and overall throughput is further limited by **shared buses** and **finite memory-module bandwidth**, even on NUMA.
+- Hence, performance hinges on **minimizing cross-core touches** of the same cache lines and avoiding unnecessary coherence traffic.
+
+**MESI in one table**
+
+| State | Meaning | Local Read | Local Write | Other CPU Read | Other CPU Write (RFO) | Notes |
+|---|---|---|---|---|---|---|
+| **M**odified | Dirty line; only copy | Hit; stay **M** | Hit; stay **M** | Supplying core **sends data**; both → **S** and memory updated | Supplying core **sends data**; local → **I** | Dirty implies uniqueness |
+| **E**xclusive | Clean; only copy | Hit; stay **E** | **Silent** → **M** (no bus traffic) | → **S** (second reader) | → **I** (loses ownership) | E→M cheaper than S→M |
+| **S**hared | Clean; shared | Hit; stay **S** | **RFO** → **M** (others invalidated) | Still **S** | → **I** | Fallback when exclusivity unknown |
+| **I**nvalid | Not present | Miss | Miss | — | — | Initial state |
+
+- **Key point:** **E**xclusive avoids a bus transaction on the first local write (**E→M**). **S→M** needs an **RFO** and invalidations.
+
+**What triggers costly traffic?**
+- **RFOs (Request-For-Ownership):**
+  - **Thread migration:** the new CPU must acquire the lines the old CPU had modified.
+  - **True sharing:** two CPUs write the **same cache line**.  
+- **Dirty-line reads:** a reader must fetch the **up-to-date** line from the owning CPU (not memory).  
+- **Protocol latency scaling:** a MESI transition waits until **all CPUs** had a chance to observe/respond; the **slowest path** (bus collisions, NUMA hop delay, traffic) bounds the transition time.
+
+**Hardware limits beyond coherence**
+- **Shared FSB / interconnect:** If one CPU can saturate the bus, **multiple CPUs divide** that bandwidth.
+- **Memory-module contention:** Even with multiple controllers, **concurrent access to the same module** limits throughput.
+- **NUMA reality:** Local memory is fast, but synchronization and shared regions **cross nodes**, re-introducing latency and bandwidth limits.
+
+**Practical implications (actionable, per the excerpt)**
+- **Minimize cross-core access** to the **same cache lines**; fewer RFOs ⇒ less bus traffic.
+- **Avoid unnecessary sharing** for synchronization; still required at times, but keep it **infrequent**.
+- **Be aware of migration costs:** moving a thread to another CPU can force a **wave of RFOs** to rebuild its working set.
+- **Design for locality:** prefer structures and work partitioning that **keep data on one CPU/node** when possible.
+
+#### Multi Threaded Access
+- When **multiple threads** run on a machine where CPUs/cores **share the same memory buses**, performance can **drop even without any writes**.
+- Prefetch traffic from each thread contends for the **shared bus** (CPU↔memory controller) and the **memory-module bus**.
+- Once writes enter the picture, **write-back** traffic piles on, further saturating bandwidth.
+- Coherence (RFOs) becomes a tax when threads truly share the **same cache lines** or when threads migrate across CPUs.
+- Net effect:
+  - scaling is **near-linear** only while the working set fits in **last-level cache**;
+  - once it spills to DRAM, speedups **collapse**.
+
+**What the graphs demonstrate**
+- **Setup:** up to **4 threads** on a **4-processor** machine; fastest per-thread time is reported (total runtime is **even higher**).
+- All processors share **one bus** to the memory controller and **one** to memory modules.
+1. Sequential **read-only**, 128-byte entries
+    - **No writes, no sync**, shared lines allowed.
+    - Still see **~18% slowdown** with **2 threads** and **~34%** with **4 threads** (fastest thread).  
+      *Cause:* pure **bandwidth contention** (prefetch traffic) on shared buses once the working set exceeds LLC.
+2. Sequential **Increment** (writes), 128-byte entries
+    - **Y-axis log scale** hides the pain: ~**18%** penalty with **2 threads**, and a striking **~93%** penalty with **4 threads**.  
+      *Cause:* **prefetch + write-back** traffic saturates the bus; L1d benefits vanish as soon as >1 thread runs (even with tiny working sets).
+3. Random access (**Add-next-last**)
+    - Worst case: **~1,500 cycles/element** in the extreme; adding threads **worsens** contention.
+4. Achieved speedups at largest working set (from your table)
+
+    | #Threads | Seq Read | Seq Inc | Rand Add |
+    |---:|---:|---:|---:|
+    | 2 | **1.69×** | **1.69×** | **1.54×** |
+    | 4 | **2.98×** | **2.07×** | **1.65×** |
+
+    - Interpretation: With 4 threads and writes, speedup collapses to **~2.07×**; with random access it’s only **~1.65×**.
+5. Why speedup collapses beyond LLC
+    - Within **L2/L3**, curves approach **~2×** and **~4×** for 2/4 threads.  
+    - Once the working set **exceeds L3**, speedups **crash**—2 and 4 threads converge to **similar** (poor) throughput due to **DRAM bandwidth + coherence** costs.
+
+**What actually slows you down (cause→effect)**
+- **Shared buses** (CPU↔MC + MC↔DIMMs): prefetch and write-back traffic **compete** → slower even for read-only threads.
+- **Write-back** with multiple writers: each thread’s modified lines must be **written** (or owned) → heavy bus usage.
+- **Coherence RFOs**: required when two CPUs/threads **write the same cache line** or after **thread migration**; they serialize ownership.
+- **Random access**: prefetching becomes ineffective, **TLB/caching** help little, so DRAM latency dominates → **hundreds to ~1,500** cycles/element.
+
+**Practical guidance**
+1. **Scale while hot data fits in LLC.** Expect near-linear gains only while the working set resides in L3/L2; beyond that, **DRAM bandwidth** caps speedup.
+2. **Partition data per thread** to avoid **touching the same cache lines** (reduces RFOs and bus invalidations).
+3. **Prefer sequential access** and **batch writes** to maximize effective bandwidth; random patterns kill prefetching.
+4. **Minimize thread migration** of hot workers (migration forces **ownership moves** / cache warm-up on the new CPU).
+5. **Be cautious with 3–4+ threads** on a shared-bus box: for large working sets or random access, the **incremental gain past 2 threads is tiny**.
+
+#### Special Case: Hyper-Threads
+- - **Two hardware threads share one core.** They time-slice and **share almost all core resources** (execution units, caches, queues); they only have separate architectural **register sets**.
+- **Goal:** keep the core busy by running the second thread **while the first is stalled**, typically on **cache misses / memory latency**.
+
+**Key Points**
+- **Benefit requires overlap.** SMT helps **only if** the second thread can run **during stalls** (e.g., cache misses) of the first.
+- **Caches are shared.** Per-thread **effective cache capacity drops**, so **cache hit rates can fall**—sometimes enough to **negate any SMT gain**.
+- **OS scheduling matters.** If the OS treats sibling hyper-threads like separate CPUs and runs **unrelated code** on them, you may see **more cache contention** and **higher miss rates**.
+
+**Simple performance model**
+- Let:
+  - `N` = total instructions
+  - `Fmem` = fraction of instructions that access memory
+  - `Ghit` = cache hit rate
+  - `Tproc` = cycles per (non-memory) instruction
+  - `Tcache` = cycles for a cache hit
+  - `Tmiss` = cycles for a cache miss  
+- **Idea:** Execution time grows as cache misses grow; SMT must **reduce total wall time** by overlapping misses of one thread with useful work from the other.
+- The text’s analysis (for a P4-class HT core) derives **minimum cache-hit rates** needed for SMT to **not slow each thread by ≥50%** (i.e., so two threads together can still beat one).
+
+**Concrete thresholds from the text (same machine assumptions)**
+- If **single-thread hit rate** is **< ~55%**, SMT **almost always helps** (core is often stalled; plenty to overlap).
+- At **60% single-thread hit rate**, the dual-thread run needs only **~10%** hit rate per thread to break even → **usually feasible**.
+- At **95% single-thread hit rate**, the dual-thread run needs **~80%** per-thread hit rate → **hard** once two threads **halve effective cache** and **interfere**.
+- **Bottom line:** SMT is **most useful** for **memory-latency-bound** code with **modest hit rates** and **predictable overlap**. It’s **least useful** for already **cache-friendly** code.
+
+**When to **enable/use** Hyper-Threads**
+- Your workload is **memory-latency-bound** (low–moderate `Ghit`) and shows **front-end / backend stalls**.
+- Two cooperating threads can **share code/data paths** to **reuse** cache lines (see text’s later suggestion about tightly-coupled collaboration).
+- You can **pin** related threads to the **same core** and **minimize migration**, avoiding ownership transfers of hot lines.
+
+**When to **avoid/disable** Hyper-Threads**
+- Workloads are already **cache-efficient** (high `Ghit`); SMT likely **reduces** per-thread cache hit rates below the threshold.
+- The OS scheduler regularly **co-schedules unrelated processes** on the same core (cache thrash risk).
+- You observe **regressions** in throughput/latency after enabling SMT, especially under **mixed workloads**.
+
+**Do / Don’t checklist**
+**Do**
+- Measure **cache-miss rates** (L1/L2/LLC) and **stall cycles** before/after SMT.
+- **Pin** cooperating threads on the **same physical core** (and keep them there) if they **share working sets**.
+- Structure work so the second thread can **run during stalls** of the first (e.g., overlap I/O or independent compute).
+**Don’t**
+- Co-schedule two **unrelated, cache-hungry** threads on the same core.
+- Assume SMT is a free 2× speedup—it **rarely is**; expect gains only when **miss overlap** is large.
+- Ignore **migration**: moving a hot thread between cores triggers **ownership moves** and **re-warm costs**.
+
+#### 3.3.5 Other Details
+- **Two address spaces exist:** **virtual** (what code uses) and **physical** (what DRAM sees).  
+- **Cache lookups are on a critical path.** Doing the lookup with a **virtual tag** lets the CPU start earlier in the pipeline (before the MMU translation finishes).  
+- **Design split (common today):**
+  - **L1 caches (L1i/L1d):** **virtually tagged** (fast, tiny, can be flushed if page tables change).
+  - **L2/L3 (and beyond):** **physically tagged** (translation finishes in time; flushing is costly due to size/latency).
+
+**Why not use only physical tags?**
+- Virtual addresses are **not unique**: same VA can map to different PAs over time or across processes.  
+- But waiting for VA→PA translation before an L1 lookup would **expose latency**; hence **virtual tags in L1** to **hide** it.
+
+**Practical consequences**
+- **L1 maintenance:** When page tables change, L1 may need **partial/targeted flush** (or, worst case, full flush). Hardware often provides instructions to invalidate a **range**.
+- **Lower levels stay physical:** Avoid frequent flushes on big caches; the MMU translation is **ready** by then.
+- **Set conflicts:** All caches suffer if too many hot lines map to the **same set**. With physically tagged caches you **cannot** steer mapping from user space.
+- **Synonyms/aliases matter:** Mapping the **same physical page** at **multiple virtual addresses** **within one process** can create coherency/duplication issues in virtually tagged L1. **Avoid if possible.**
+- **Replacement policy:** Generally **LRU (or approximations)**. As associativity grows (with more cores/sharing), true LRU gets **expensive**; implementations may change. Little to tune from user space.
+- **Virtualization wrinkle:** Under a hypervisor, the **VMM controls physical memory**; even the OS cannot fully predict PA placement/mapping diversity.
+
+**What you should do (actionable)**
+- **Don’t create synonyms:** Avoid mapping the **same PA** to **multiple VAs** inside a process.  
+- **Use pages fully:** Pack data so each **touched page** carries useful work (better TLB/cache behavior).  
+- **Prefer larger pages where it helps:** Bigger pages can **reduce TLB pressure** and **diversify PA mapping**, mitigating set hot-spots (details in the virtual memory section).  
+- **Don’t overthink replacement:** You can’t pick LRU vs others; instead **shape access patterns** (locality, streaming, blocking) to be cache-friendly.
+
+**Quick pitfalls**
+- **Synonyming the same buffer** at two VAs → L1 incoherence hazards.  
+- **Assuming OS can “color” pages reliably** under virtualization → may not hold; measure, don’t assume.
+
+---
+
+### 3.4 Instruction Cache
