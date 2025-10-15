@@ -1299,6 +1299,45 @@ struct l {
 [back to top](#table-of-contents)
 
 ## 4 Virtual Memory
+- **Goal:** give each process its own (large) *virtual* address space.
+- **Mechanism:** the CPU’s **MMU** translates **virtual addresses (VA)** → **physical addresses (PA)** using **page tables**; the OS builds/maintains those tables.
+- Virtual memory makes isolation and flexibility easy, but every miss (TLB, page walk, page fault) is latency you pay—design data layouts and access patterns to keep translations hot and pages contiguous.
+
+**Core Data Structures**
+- **Pages & Frames:** memory is managed in fixed-size chunks (e.g., 4 KiB; also “huge pages” like 2 MiB/1 GiB).
+- **Page Tables:** multi-level tree (e.g., 4–5 levels on x86-64) mapping VA pages → PA frames with **PTEs** (present, RW, NX, accessed/dirty, etc.).
+- **Per-process roots:** each process has its own page-table root; context switches swap the active root (or tag it with an ASID/PCID).
+
+**Fast Path: the TLB**
+- **TLB (Translation Lookaside Buffer):** small, very fast cache of VA→PA translations.
+- **TLB hit:** translation is essentially “free”.
+- **TLB miss:** hardware (or software on some ISAs) **walks the page tables**:
+  - Multiple dependent memory reads (one per level) → **dozens to hundreds of cycles** when they miss in cache.
+- **Pressure sources:** large working sets, poor locality, many distinct pages, or frequent context switches → **higher TLB miss rate**.
+- **Why huge pages help:** one TLB entry covers much more memory → fewer misses (but coarser protection/fragmentation trade-offs).
+
+**Page Faults**
+- **Minor fault:** mapping exists but needs bookkeeping (e.g., first touch, COW) → handled in kernel; **microseconds** scale.
+- **Major fault:** page not in RAM (must load from disk) → **milliseconds** scale; devastating for latency.
+- **COW (copy-on-write):** reads share; first write faults then creates a private copy.
+
+**Caches vs. Address Kind (high level)**
+- **L1 (often)**: uses the VA early in the pipeline so hits can be fast; details vary by microarchitecture (virtually indexed / physically tagged hybrids are common).
+- **L2/L3:** use **physical** tags (translation has completed by then).
+- **Practical upshot:** you don’t control this, but big TLB miss bursts still stall you before deeper caches can help.
+
+**Costs You’ll Feel**
+- **TLB miss:** page walk over multiple cache lines; if those lines miss in cache, stalls balloon.
+- **Page fault:** kernel work (minor) or disk I/O (major).
+- **Shootdowns:** when mappings change, other CPUs’ TLB entries must be invalidated → global pauses on highly-shared memory.
+
+**Dev Tips (to spend less time paying VM taxes)**
+- **Maximize locality:** walk memory linearly; group hot data; avoid pointer-chasing across many pages.
+- **Use larger pages** (huge/transparent huge pages) for big, hot heaps or arrays to cut TLB pressure.
+- **Batch allocations & reuse memory** to keep working sets stable and page walks warm.
+- **Avoid aliasing the same physical memory** at multiple virtual addresses in one process unless you truly need it.
+- **Reduce churn:** fewer processes/threads touching the same mappings; avoid frequent map/unmap when possible.
+- **Prefault when sensible:** e.g., `madvise`/`mlock`/“touch” pages ahead of time for latency-sensitive paths.
 
 ---
 
