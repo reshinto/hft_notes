@@ -1299,85 +1299,442 @@ struct l {
 [back to top](#table-of-contents)
 
 ## 4 Virtual Memory
-- **Goal:** give each process its own (large) *virtual* address space.
-- **Mechanism:** the CPU’s **MMU** translates **virtual addresses (VA)** → **physical addresses (PA)** using **page tables**; the OS builds/maintains those tables.
-- Virtual memory makes isolation and flexibility easy, but every miss (TLB, page walk, page fault) is latency you pay—design data layouts and access patterns to keep translations hot and pages contiguous.
+- Virtual memory (VM) gives each process its own address space; this section focuses on **how** it’s implemented and what it **costs**.
+- The OS builds and maintains **page tables**; the CPU’s **MMU** performs per-access translation from **virtual** to **physical** addresses.
+- Virtual addresses are **32-bit** on 32-bit systems and **64-bit** on 64-bit systems.
+- On x86/x86-64, **segmentation** can add a fixed offset to logical addresses, but it’s trivial for performance discussions here.
 
-**Core Data Structures**
-- **Pages & Frames:** memory is managed in fixed-size chunks (e.g., 4 KiB; also “huge pages” like 2 MiB/1 GiB).
-- **Page Tables:** multi-level tree (e.g., 4–5 levels on x86-64) mapping VA pages → PA frames with **PTEs** (present, RW, NX, accessed/dirty, etc.).
-- **Per-process roots:** each process has its own page-table root; context switches swap the active root (or tag it with an ASID/PCID).
-
-**Fast Path: the TLB**
-- **TLB (Translation Lookaside Buffer):** small, very fast cache of VA→PA translations.
-- **TLB hit:** translation is essentially “free”.
-- **TLB miss:** hardware (or software on some ISAs) **walks the page tables**:
-  - Multiple dependent memory reads (one per level) → **dozens to hundreds of cycles** when they miss in cache.
-- **Pressure sources:** large working sets, poor locality, many distinct pages, or frequent context switches → **higher TLB miss rate**.
-- **Why huge pages help:** one TLB entry covers much more memory → fewer misses (but coarser protection/fragmentation trade-offs).
-
-**Page Faults**
-- **Minor fault:** mapping exists but needs bookkeeping (e.g., first touch, COW) → handled in kernel; **microseconds** scale.
-- **Major fault:** page not in RAM (must load from disk) → **milliseconds** scale; devastating for latency.
-- **COW (copy-on-write):** reads share; first write faults then creates a private copy.
-
-**Caches vs. Address Kind (high level)**
-- **L1 (often)**: uses the VA early in the pipeline so hits can be fast; details vary by microarchitecture (virtually indexed / physically tagged hybrids are common).
-- **L2/L3:** use **physical** tags (translation has completed by then).
-- **Practical upshot:** you don’t control this, but big TLB miss bursts still stall you before deeper caches can help.
-
-**Costs You’ll Feel**
-- **TLB miss:** page walk over multiple cache lines; if those lines miss in cache, stalls balloon.
-- **Page fault:** kernel work (minor) or disk I/O (major).
-- **Shootdowns:** when mappings change, other CPUs’ TLB entries must be invalidated → global pauses on highly-shared memory.
-
-**Dev Tips (to spend less time paying VM taxes)**
-- **Maximize locality:** walk memory linearly; group hot data; avoid pointer-chasing across many pages.
-- **Use larger pages** (huge/transparent huge pages) for big, hot heaps or arrays to cut TLB pressure.
-- **Batch allocations & reuse memory** to keep working sets stable and page walks warm.
-- **Avoid aliasing the same physical memory** at multiple virtual addresses in one process unless you truly need it.
-- **Reduce churn:** fewer processes/threads touching the same mappings; avoid frequent map/unmap when possible.
-- **Prefault when sensible:** e.g., `madvise`/`mlock`/“touch” pages ahead of time for latency-sensitive paths.
+**Key Points**
+- **Division of labor**
+  - **OS:** populates page-table data structures.
+  - **MMU/CPU:** executes the translation on every memory reference.
+- **Address types**
+  - **Virtual address:** what programs use.
+  - **Physical address:** where data actually resides in RAM.
+- **Bit widths**
+  - 32-bit systems → 32-bit virtual addresses.
+  - 64-bit systems → 64-bit virtual addresses (architecture may not use the full 64 bits).
+- **Segmentation on x86/x86-64**
+  - Acts as an additional indirection by adding a **segment base** to a logical address.
+  - Considered **trivial/ignorable** here with respect to VM performance.
 
 ---
 
 ### 4.1 Simplest Address Translation
+- The MMU translates **virtual addresses** to **physical addresses** on a **page-by-page** basis.
+- A virtual address is split into fields that **index page tables** and an **offset** within the page.
+- In the simplest (single-level) model, a **Page Directory** maps virtual pages to **physical page frames**; the **offset bits** are carried through unchanged.
+- Example (x86, 4 MB pages): **10-bit directory index** + **22-bit page offset** → physical address = **directory entry base (10 b)** ∥ **offset (22 b)**.
+
+**Key Points*
+- **Remap granularity:** per page; multiple directory entries may point to the **same physical page**.
+- **VA split (4 MB pages on x86, 32-bit VA):**
+  - `DirIndex`: top **10 bits** → select one of **1024** Page Directory entries.
+  - `Offset`: low **22 bits** → byte offset within the 4 MB page.
+- **Page Directory in RAM:** OS allocates **contiguous physical memory** for it and stores its **base address** in a special CPU register.
+- **Directory entry contents:** physical page **base address bits** (for 4 MB pages: **10 bits**) **+** **access/permission flags**.
+- **Physical address construction:** concatenate the **directory entry’s base** with the **offset**.
+
+**Address Fields (ASCII)**
+Virtual Address (32-bit)
+
+|10 bits | 22 bits|
+|---|---|
+|Page-Directory Index (PDI)|Page Offset within 4 MiB|
+|`VA[31:22]`|`VA[21:0]`|
+
+**Example**
+- `VA = 0x12345678`
+  - `PDI = 0x48` (`VA >> 22`)
+  - `Offset = 0x00345678` (`VA & 0x3FFFFF`)
+- Suppose `PD[0x48].Base = 0x0C000000` (4 MiB aligned)
+- **Result:** `PA = 0x0C000000 | 0x00345678 = 0x0C345678`
+
+**Notes**
+- Real systems usually use multi-level paging with **4 KiB** pages; the **PS=1** large-page mode simplifies to one PD lookup.
+- L1 caches often tag by **virtual** address for speed; L2/L3 by **physical**.
+- TLB caches VA→PA translations to avoid repeating the walk.
 
 ---
 
 ### 4.2 Multi-Level Page Tables
+- With 4 KiB pages the page-offset is **12 bits**, leaving too many upper bits to index a single, flat page table (it would be ~**4 MiB** per process).
+- Modern CPUs therefore use **multi-level page tables** (often **4 levels**): each VA is split into several **directory indexes** plus a **page offset**.
+- The MMU **walks** the levels (L4→L3→L2→L1) following pointers until the **L1 entry** yields the physical page frame; the **offset** supplies the low PA bits.
+- Because unused VA regions have no tables allocated, the structure is **sparse** and memory-efficient.
+
+**Key Points**
+- **Why multi-level?**  
+  - 4 KiB pages ⇒ **12-bit offset**; a single-level directory for all other bits would be enormous (e.g., 2²⁰ entries × 4 B = **4 MiB** per process).
+  - Multi-level trees allocate tables **only where needed**.
+- **Typical 4-level split (x86-64, 4 KiB pages, 48-bit canonical VA):**  
+  - **PML4** index: 9 bits  
+  - **PDPT** index: 9 bits  
+  - **PD** index: 9 bits  
+  - **PT** index: 9 bits  
+  - **Offset**: 12 bits  
+    *(9+9+9+9+12 = 48)*
+- **Coverage & table counts (4 KiB pages, 512 entries per table):**  
+  - 1 **PT** (L1) maps **512 × 4 KiB = 2 MiB**.  
+  - To map **2 MiB** contiguously: **1 PT + 1 PD + 1 PDPT + 1 PML4** (total **4** tables).  
+  - To map **1 GiB** contiguously: **512 PTs** (for 512 × 2 MiB) + **1** each of PD, PDPT, PML4.
+- **Walk mechanics (hardware “page walk”):**  
+  1. Load **PML4 base** from a CPU register (e.g., CR3-derived).  
+  2. Use VA’s PML4 bits to index PML4 ⇒ get **PDPT base**.  
+  3. Index PDPT ⇒ get **PD base**.  
+  4. Index PD ⇒ get **PT base**.  
+  5. Index PT ⇒ get **page frame base**.  
+  6. **PA = frame_base | VA.offset**.  
+      *(Some ISAs do this in hardware; others may involve the OS.)*
+- **Sparsity & layout effects:**  
+  - If a directory entry is **empty**, lower levels **don’t exist**.  
+  - Real processes often need multiple higher-level tables: stacks and heaps are far apart; **ASLR** spreads code/DSOs/heap/stack, increasing the number of allocated tables.
+- **Performance considerations:**  
+  - **TLB** caches VA→PA translations; a TLB hit avoids a multi-memory-read walk.  
+  - **ASLR** improves security but can **reduce contiguity**, growing table count and TLB pressure. If performance trumps security, ASLR can be reduced/disabled so DSOs load contiguously (trade-off!).
+
+**Minimal table footprint examples**
+- **2 MiB mapping:** 1×PML4 + 1×PDPT + 1×PD + 1×PT = **4 pages** of metadata.
+- **1 GiB mapping:** 1×PML4 + 1×PDPT + 1×PD + **512×PT** = **515 pages** of metadata.
+
+**Notes**
+- Larger pages (e.g., 2 MiB “huge pages”) can reduce walk depth/pressure, but 4 KiB remains common for flexibility.
+- Flags (Present, R/W, U/S, NX, cacheability) live in directory/table entries at each level.
 
 ---
 
 ### 4.3 Optimizing Page Table Access
+- Walking multi-level page tables for every virtual→physical address translation is far too slow (each access could require multiple serialized memory reads).
+- CPUs therefore cache **the final translation** (physical page frame + attributes) in a **Translation Look-Aside Buffer (TLB)** keyed by the virtual page number.
+- On a hit, the MMU forms the physical address by appending the original page **offset**—fast enough to feed the pipeline.
+- Misses trigger a **page walk**, which is expensive; hence TLB size, associativity, and locality matter a lot.
+
+**Key Points**
+- **Why not just cache page-table entries in L1D?**  
+  A 4-level walk needs up to **4 dependent memory reads** per access. Even if they all hit L1D, you’d burn double-digit cycles and saturate cache bandwidth.
+- **What the TLB caches:**  
+  The **physical page number (frame)** plus permissions/flags, keyed by the **virtual page number** (the VA with the offset bits removed). **Offset** bits bypass the TLB and are spliced on after the hit.
+- **Hit vs. miss cost:**  
+  - **Hit:** address formed in a few cycles; often fully overlapped with the pipeline.  
+  - **Miss:** hardware (or OS, depending on ISA) performs a **page walk** (multi-level), which is **slow** and competes for cache/bandwidth.
+- **Associativity & levels:**  
+  - **L1 TLBs** are tiny and very fast; historically **fully associative** (now often set-associative as sizes grow).  
+  - **L2 TLB** (if present) is **larger, slower, unified** (covers both code and data).  
+  - Separate **ITLB** for instructions and **DTLB** for data at L1.
+- **Prefetching & the TLB:**  
+  Hardware data prefetchers **must not** trigger page walks (they can’t safely fault), so they **do not prefetch TLB entries**. If you need it, use **explicit prefetch-with-NT/TA** style instructions that are allowed to populate translations (ISA/CPU-dependent).
+- **Pipeline implications:**  
+  TLB lookups sit on the critical path to L2 (when L2 is PA-tagged). Misses bubble through the pipeline; long page walks are hard to hide.
+- **Locality matters (again):**  
+  - **Spatial locality:** reusing addresses within the same page reuses a single TLB entry.  
+  - **Working set of pages** should fit the TLB to avoid thrashing (just like cache sets/lines).
+
+**Practical Tips**
+- **Cluster hot data/code** into fewer pages; fewer distinct pages ⇒ fewer TLB entries needed.  
+- Consider **larger pages** (e.g., 2 MiB/1 GiB) for hot, contiguous regions to cut TLB pressure (trade-offs: fragmentation, permissions granularity).  
+- **Avoid needless VA aliasing** of the same physical memory inside one process (can multiply TLB demand).  
+- When prefetching, prefer **documented prefetch ops** that can legally help translations (where available).
+
+**Common Pitfalls**
+- Assuming hardware prefetchers “warm” the TLB—**they don’t**.  
+- Large, sparse heaps / heavy ASLR spreads increase the number of active pages ⇒ **TLB miss spikes**.  
+- Ignoring instruction-side pressure: hot code scattered over many pages can thrash the **ITLB**, too.
+
+**Terminology**
+- **TLB:** Cache of VA→PA translations.  
+- **ITLB/DTLB:** Instruction/Data TLB (L1).  
+- **L2 TLB:** Larger, unified TLB (if present).  
+- **VPN/PFN:** Virtual/Physical Page Number.  
+- **Page walk:** Reading page-table levels to resolve a translation.
 
 #### 4.3.1 Caveats Of Using a TLB
+- The **TLB is per-core and shared** by all threads/processes running on that core.
+- Because translations depend on the **current page-table tree**, cached TLB entries may become invalid across context switches.
+- Two strategies exist:
+  1. **Flush the TLB** on switch, or
+  2. **Extend TLB tags** with an identifier for the address space (ASID/PCID-like), so entries remain valid across switches.
+- **Flushing is simple but costly** (destroys many still-useful entries).
+  - **Tagging preserves translations**, reducing misses—especially when entering/exiting kernel/VMM frequently or switching between threads of the same process.
+
+**Key Points**
+- **Why flushes hurt**
+  - Full TLB flush on kernel/VMM entry/exit or process switch discards many entries that will be needed immediately again.
+  - Example scale: a Core 2 with ~**128 ITLB** and **256 DTLB** entries loses >100/200 entries per flush.
+- **Selective invalidation helps**
+  - OS can invalidate **only the affected address ranges** (e.g., after `munmap`) instead of flushing everything.
+- **Extended TLB tags (address-space IDs)**
+  - Tag each TLB entry with a **unique identifier for the page-table tree**.
+  - Benefits:
+    - **Kernel/VMM entries** stay hot across frequent transitions.
+    - **Thread switches within the same process** need **no TLB flush**.
+    - **Process switches** can avoid full flush if tags distinguish address spaces.
+  - **Tag space is limited** → identifiers may be **reused**, requiring **partial flush** of entries carrying the reused ID.
+- **Virtualization angle**
+  - AMD’s Pacifica introduced a **1-bit ASID** to distinguish **VMM vs. guest** address spaces, avoiding needless flushes when entering/leaving the VMM.
+  - More tag bits in the future → fewer forced partial flushes.
+- **Why TLBs aren’t (much) bigger**
+  - If frequent flushes wipe entries, **very large TLBs show diminishing returns** (they’re often not resident long enough to matter).
+
+**Practical implications**
+- Systems **without extended tags**: expect higher TLB miss rates around syscalls, interrupts, VMM exits/entries, and process switches.
+- With **ASID-like tags**: fewer stalls re-filling translations; better syscall-heavy and virtualization performance.
+
+**OS/VM design notes**
+- Prefer **overlayed/consistent kernel mappings** to reduce churn.
+- Use **targeted TLB shootdowns/invalidation** for changed regions, not global flushes.
+- In virtualized setups, leverage **distinct IDs** for guest vs. hypervisor to avoid thrashing.
+
+**Programmer takeaways**
+- Fewer distinct hot pages → less TLB pressure after switches.
+- Minimize unnecessary address-space changes that force invalidations.
 
 #### 4.3.2 Influencing TLB Performance
+- Larger pages reduce TLB pressure (fewer translations and misses) and can shrink page-walk cost by shortening page-table depth, but they require physically contiguous memory and can waste RAM via alignment/fragmentation.
+- On Linux, huge pages typically need pre-reservation (e.g., `hugetlbfs`).
+- Raising the *minimum* page size is constrained by binary/ABI alignment (e.g., ELF `p_align`).
+- You can also lower TLB pressure by colocating concurrently used data onto fewer pages.
+
+**Key Points**
+- **Bigger pages → fewer TLB entries**
+  - Fewer translations; better TLB hit rate.
+  - Larger **offset** eats more VA bits → shallower page walks on TLB miss.
+- **Common sizes & coexistence**
+  - x86/x86-64: base **4 KB** plus **2 MB** / **4 MB** options.
+  - Other ISAs (e.g., IA-64/PowerPC) support larger base sizes (e.g., **64 KB**).
+  - Multiple sizes can be **used concurrently**.
+- **Costs of large pages**
+  - Must be **physically contiguous**; allocator must find big runs (e.g., 2 MB = 512×4 KB).
+  - **Fragmentation** over uptime makes late allocation hard.
+  - **Internal fragmentation**: average ~½ page wasted per mapping due to page-aligned regions.
+- **Linux practice: huge pages**
+  - Reserve at boot or early via **`hugetlbfs`** (fixed pool).
+  - Ties down RAM; expanding pool may require **reboot**.
+  - Suits steady, RAM-rich, perf-critical apps (e.g., **databases**).
+- **Raising the *minimum* page size**
+  - All mappings must honor the larger granularity; not always feasible.
+  - **Binary layout constraints** (e.g., ELF `p_align`) cap usable page sizes (e.g., 2 MB on x86-64 example).
+- **Layout to reduce TLB pressure**
+  - **Group hot data/code** that’s used together onto as **few pages** as possible.
+
+**When to use huge pages**
+- Large, long-lived heaps; working sets ≫ TLB reach; predictable allocation; uptime where boot-time reservation is acceptable.
+
+**Operational tips**
+- Pre-reserve ample huge pages; monitor usage to avoid starvation.
+- Prefer **transparent huge pages** where safe, but validate latency/fragmentation impacts.
+- For binaries, verify **ELF program header `p_align`** vs. intended page size.
+
+**Rule of thumb**
+- If TLB misses or page-walks show up in profiles, try **bigger pages** and/or **better colocation** before deeper surgery.
 
 ---
 
 ### 4.4 Impact Of Virtualization
+- Full OS virtualization adds another layer of address translation and bookkeeping, which makes cache and TLB misses costlier than on bare metal.
+- Classic Xen uses a separate VMM with shadow page tables (expensive), while hardware assists (Intel EPT / AMD NPT) replace shadowing with nested page tables and let the TLB cache final translations.
+- Tags like ASID/VPID reduce some TLB flushes but not all.
+- KVM integrates the VMM into the Linux kernel, reusing a single, mature memory manager instead of duplicating it.
+- Even with assists, virtualization overhead remains—so reducing misses and mapping churn pays extra dividends.
+
+**Key Points**
+- **Containers vs. VMs**
+  - Containers/jails share one OS → no extra memory-translation layer.
+  - VMs (Xen/KVM) run independent OS images → add a second layer.
+- **Xen model (Dom0/DomU + VMM)**
+  - VMM controls physical memory; Dom0 manages most devices.
+  - Guest page-table updates trap to VMM to update **shadow page tables** → high overhead in time and memory.
+- **Hardware assists**
+  - **Intel EPT / AMD NPT**: guest page tables map GVA→“host virtual”, VMM tables map to HPA; removes shadowing and most traps.
+  - TLB caches **final** (nested) translation results.
+  - **ASID/VPID** avoid full TLB flush on VM entry/exit (good), but are typically per-domain, not per-process → process switches in guests can still flush.
+- **KVM approach**
+  - No separate VMM: Linux kernel is the hypervisor; user-space `kvm` process controls a guest.
+  - Reuses Linux’s memory manager → less duplication, fewer bugs, simpler NUMA/memory discovery.
+- **Performance implications**
+  - Cache (I/D) and **TLB** misses cost even more under virtualization.
+  - EPT/NPT narrows but does not eliminate the gap to bare metal.
+
+**Practical guidance**
+- Use **huge pages/THP** in host and guests to cut TLB pressure.
+- Minimize page-table churn: batch (un)maps, reduce frequent `mmap/munmap/brk` changes.
+- Keep hot working sets compact; colocate hot data/code; reduce context switches.
+- Be **NUMA-aware**: align vCPUs, guest memory, and devices to nodes.
+- Pin vCPUs sensibly; avoid overcommit that thrashes TLBs/caches.
+- Prefer paravirtual I/O to reduce VM exits.
+
+**Observe & tune**
+- Track VM-exit causes, EPT/NPT violations, TLB miss rates, page-fault sources.
+- Validate with microbenchmarks (latency of loads/stores, page-walk counters) and end-to-end workloads.
+
+**Caveats**
+- ASID/VPID scope limits per-process TLB retention inside a guest.
+- Shared last-level `cache / memory` bandwidth contention still apply in multi-VM hosts.
+- Even with assists, nested translations add latency—optimize like it matters (because it does).
 
 [back to top](#table-of-contents)
 
 ## 5 NUMA Support
+- On Non Uniform Memory Access (NUMA) machines, memory access latency/bandwidth depend on which CPU socket (“node”) touches which region of physical RAM.
+- Local-node accesses are faster; remote-node accesses traverse an interconnect and are slower.
+- To get good performance, both the OS and applications must place threads and data with locality in mind.
+- Linux exposes NUMA topology and provides schedulers, memory policies, and APIs/tools to control placement and measure effects.
+
+**Key Points**
+- **NUMA Basics**
+  - System is split into **nodes** (CPU cores + memory controller + RAM).  
+  - **Local** access: lowest latency, highest bandwidth; **remote** access: costlier (the “NUMA factor”).  
+  - Interconnects (e.g., QPI/UPI/Infinity Fabric/mesh) add hops → more latency, contention.
+- **Why it Matters**
+  - Remote DRAM reads/writes and cross-node cache-line ownership (coherency traffic) inflate stalls.  
+  - Bandwidth is finite per node/channel; concurrent nodes can throttle each other.
+- **Linux Support (what you can use)**
+  - **Discovery**: `lscpu --extended`, `numactl --hardware`, `lstopo`, `/sys/devices/system/node/`.
+  - **Scheduling & AutoNUMA**: kernel can migrate pages toward where threads run; tunable via `/proc/sys/kernel/numa_balancing`.
+  - **Placement Policies** (per-thread/region):
+    - **first-touch** (default), **preferred**, **bind** (strict node set), **interleave** (spread across nodes).
+    - Syscalls/APIs: `mbind(2)`, `set_mempolicy(2)`, `get_mempolicy(2)`, `move_pages(2)`; **libnuma** helpers like `numa_alloc_onnode`, `numa_set_membind`.
+  - **Affinity**: pin threads/IRQs/devices to nodes with `taskset`, `numactl`, cpusets cgroup, `/proc/irq/*/smp_affinity`.
+  - **Huge pages**: THP or per-node hugepages reduce TLB pressure; allocate per node.
+  - **I/O NUMA**: PCIe devices have a node; place I/O threads on that node to avoid remote traffic.
+  - **Observability**: `numastat`, `/proc/<pid>/numa_maps`, `perf`/PMU counters, `hwloc-ps`.
+- **App-Level Practices**
+  - **First-touch initialize** data from the thread/node that will use it.  
+  - **Shard by node**: partition data & queues so threads mostly touch local memory.  
+  - **Avoid cross-node sharing** (esp. writes); replicate read-mostly data per node.  
+  - **Pin wisely**: keep producer/consumer pairs on the same node; align NIC/NVMe handlers with their device node.  
+  - **Use huge pages** for large working sets; batch cross-node communication.
+
+**Gotchas**
+- BIOS “memory interleaving” can mask NUMA—disable if you need locality.  
+- Memory pressure can override policies → unexpected remote allocations.  
+- AutoNUMA/page migration helps or hurts depending on access stability—measure.  
+- vNUMA in VMs: align vCPUs and guest memory to host nodes; avoid cross-socket placement.
+
+**Quick Checklist**
+1. Inspect topology (`numactl -H`, `lstopo`).  
+2. Pin threads to nodes/cores; place memory with `numactl`/libnuma.  
+3. Initialize on the node that will use the data (first-touch).  
+4. Keep I/O and its workers on the same node.  
+5. Validate with `numastat`, `/proc/*/numa_maps`, and `perf` before/after changes.
 
 ---
 
 ### 5.1 NUMA Hardware
+- Non-Uniform Memory Access (NUMA) systems make some memory “closer” (lower latency, higher bandwidth) to a given CPU than other memory.
+- Small NUMA factors appear in simple multi-socket designs with local DRAM per socket; large shared-memory machines use more elaborate interconnects where topology and contention can raise the NUMA factor.
+- OSes and applications must account for this to avoid bottlenecks.
+
+**Key Points**
+- **Why NUMA exists**
+  - A single shared memory controller (e.g., classic Northbridge) becomes a bottleneck as CPU counts grow.
+  - DRAM is (effectively) single-ported; multi-port RAM is costly → architects distribute memory per CPU/socket and connect sockets.
+- **Simple NUMA (e.g., per-socket local memory)**
+  - Accessing local memory is cheaper than remote; NUMA factor is relatively low.
+  - Still requires software awareness to keep threads/data local.
+- **Interconnects & Topologies**
+  - **HyperTransport/other links** connect sockets so non-local memory is reachable.
+  - **Hypercube topology**: with **C** links per node, you can directly build up to **2^C** nodes with **diameter = C** (minimal maximum hop count).
+    - Early Opterons: **3 HT links** per CPU; one often used for the Southbridge → practical **C=2** hypercube.
+    - Next gens with **4 links** enable **C=3** hypercubes.
+  - **Crossbars/fabrics** (e.g., Newisys Horus) allow larger systems but add latency and can raise NUMA factors; benefits taper beyond a size.
+- **Large Shared-Memory Machines**
+  - **IBM x445-style**: connect multiple commodity servers to appear as one shared-memory system; interconnect introduces a notable NUMA factor that software must handle.
+  - **SGI Altix (NUMAlink)**: high-bandwidth/low-latency fabric for HPC; still expensive, and with many CPUs the effective NUMA factor becomes **dynamic** (contention-dependent).
+- **What is *not* NUMA**
+  - Clusters of commodity boxes connected over high-speed networks lack a shared address space → not NUMA (use message passing instead).
+
+**Design/Scaling Implications**
+  - More nodes/links reduce graph diameter but increase coherence traffic and contention risk.
+  - Even with fast fabrics, remote access and cross-socket cache ownership are costly; locality remains king.
+  - Software strategies (thread/data placement, first-touch, per-node sharding) are essential to keep NUMA factors low in practice.
 
 ---
 
 ### 5.2 OS Support for NUMA
+- Operating systems must respect memory locality on NUMA machines: keeping a process’s pages near the CPU(s) running it reduces latency and bus contention.
+- Because real workloads vary and memory pressure can be uneven across nodes, OSes often default to **striping (interleaving)** allocations across nodes to balance capacity and keep migration flexible—trading some peak performance for predictability.
+- Linux lets each process override this default with NUMA-aware policies.
+
+**Key Points**
+- **Local-first is ideal (but tricky):** If a task runs on CPU node *N*, its code/data should come from node *N*’s RAM to avoid remote-access penalties.
+- **Shared DSOs (e.g., libc):** Text pages are typically single-copy system-wide; with many CPUs, most will read them remotely. In theory the OS could **mirror** hot DSOs per node, but this is hard and usually only partially supported.
+- **Avoid thread/process migration:** Moving a runnable entity to another node loses cache warmth and, on NUMA, raises memory access costs if its pages remain behind.
+- **When migration is unavoidable:** Two paths:
+  - **Temporal hope:** Move the task and plan to move it back when pressure subsides.
+  - **Page migration:** Move its memory to the new node. This is expensive (copying lots of pages, brief stops for correctness) and should be used sparingly.
+- **Uneven memory demand is normal:** If every allocation were strictly local, nodes hosting big jobs would exhaust local RAM while others sit idle.
+- **Striped (interleaved) default:** To utilize total system RAM and make migrations “cost-neutral” on average, OSes commonly interleave pages across nodes. With **small NUMA factors** this is acceptable but still not optimal for performance-sensitive code.
+- **Linux policy controls:** Linux allows per-process selection of NUMA allocation policies (and inheritance to children), so performance-critical apps can opt out of striping and favor locality.
+
+**Practical guidance**
+- Pin threads near their data; avoid migrations that cross nodes.
+- Use local allocation for long-lived, node-bound workloads; prefer interleave when capacity balance and mobility matter more.
+- Reserve page migration for long-lived retargeting; it’s costly and briefly stops the task.
+- Don’t rely on DSO mirroring being automatic or comprehensive; design for locality regardless.
 
 ---
 
 ### 5.3 Published Information
+- Linux exposes detailed cache and topology info in **sysfs** so you can discover which caches are shared, how cores are grouped, and how NUMA nodes map to CPUs and relative memory costs.
+- Reading these files lets you bind threads wisely and pick memory policies that match the hardware (e.g., avoid cross-node hot data).
+
+**Key Points**
+- **Cache topology**
+  - Path: `/sys/devices/system/cpu/cpu*/cache/index*/{type,level,shared_cpu_map}`
+  - **Core 2 QX6700 example:** Each core has private **L1i** and **L1d** (shared map = one bit). **L2** is **shared by core pairs** (shared map shows two bits per pair).
+  - **Dual-core Opteron (4 sockets) example:** Each core has private **L1i/L1d/L2** (shared maps are single-bit; no shared L2).
+- **CPU/package/core layout**
+  - Path: `/sys/devices/system/cpu/cpu*/topology/`
+  - Useful files: `physical_package_id`, `core_id`, `thread_siblings`, `core_siblings`.
+  - Reading these shows: number of sockets, cores per socket, and whether **SMT** is present (multiple bits in `thread_siblings` ⇒ hyper-threads).
+- **NUMA nodes and distances**
+  - Path: `/sys/devices/system/node/node*/{cpumap,distance}`
+  - `cpumap` lists CPUs in each node; `distance` gives **relative memory access cost** per node (e.g., `10` local vs `20` remote).
+  - In the Opteron example: 4 nodes (one per socket), uniform remote cost (all remotes = 20), implying equal penalty to any other node.
+
+**Practical usage**
+- Pin threads so that hot data stays within the **shared cache group** (e.g., same L2 pair on Core 2).
+- On NUMA, pair `taskset`/`sched_setaffinity` with `numactl --membind/--interleave` based on `cpumap` and `distance`.
+- Detect SMT via `thread_siblings`; avoid co-locating memory-intensive threads on the same SMT pair unless it helps latency hiding.
+- Automate discovery: parse `shared_cpu_map` to build cache-sharing groups; parse `node*/cpumap` to build NUMA sets and weight by `distance`.
 
 ---
 
 ### 5.4 Remote Access Costs
+- **NUMA distance matters.** Remote memory accesses (extra hops) measurably slow both reads and writes; topology (who’s 0/1/2 hops away) drives real performance.
+- **You can *see* placement and distances in Linux.
+  - ** `/sys/devices/system/node/node*/{cpumap,distance}` exposes node→CPU maps and relative access costs; `/proc/<pid>/numa_maps` shows where a process’s pages actually live.
+- **Measured penalties:** Reads across nodes are slower (e.g., ~20% slower for 1-hop in practice), writes degrade further and are topology-sensitive.
+  - Keeping threads and memory co-located pays off.
+
+**Key Points**
+- **AMD 4-socket NUMA costs (per AMD doc [1], Figure 5.3):**
+  - 2-hop **reads** ≈ **+30%** vs 0-hop reads.
+  - 2-hop **writes** often quoted two ways:
+    - ≈ **+32%** vs 0-hop writes and **+17%** vs 1-hop writes.
+    - Also cited as **+49%** vs 0-hop **reads** (different baseline; keep baselines straight).
+  - Takeaway: more hops ⇒ higher write penalty than read penalty.
+- **Topology matters:**
+  - With **4 coherent HyperTransport links**, a 4-socket box can have **diameter 1** (every node 1 hop).  
+  - With **8 sockets**, hypercube diameter becomes **3** → more 2-/3-hop traffic and higher penalties.
+- **What Linux shows you:**
+  - `/sys/devices/system/node/node*/distance` → matrix of relative costs (e.g., `10` local, `20` remote).
+  - `/proc/<pid>/numa_maps` → page counts per node for each mapping (`N0…N3`), so you can confirm placement (e.g., code pages on N1/N2, dirty/heap on N3 ⇒ process likely ran on node 3).
+- **Measured reality (Figure 5.4 style test):**
+  - **Reads:** ~**20% slower** for 1-hop remote vs local across working-set sizes.
+  - **Writes & copies:** ~**20% slower** while data fits in caches; for large working sets, **remote ≈ local** (DRAM latency dominates, interconnect keeps up).
+
+**What to do in practice**
+- **Pin threads** to the node that owns their hot data; or **bind memory** to the thread’s node (`numactl --cpunodebind=… --membind=…`).
+- **Audit placement:** read `/proc/<pid>/numa_maps` during load to verify `N*` distributions align with CPU affinity.
+- **Avoid 2-hop paths** for write-heavy shared data structures; shard or replicate read-only pages near consumers.
+- When balancing, remember **write traffic** is more topology-sensitive than reads—prefer moving compute to data over moving data to compute.
+
+**Quick checklist**
+- [ ] Check `node*/distance` to grok penalties.
+- [ ] Group cooperating threads within the same node.
+- [ ] Place write-hot memory local to its writers.
+- [ ] Verify with `numa_maps`; adjust with `numactl` or mbind/policy APIs.
 
 [back to top](#table-of-contents)
 
