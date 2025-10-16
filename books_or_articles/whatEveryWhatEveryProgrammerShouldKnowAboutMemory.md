@@ -1739,65 +1739,991 @@ Virtual Address (32-bit)
 [back to top](#table-of-contents)
 
 ## 6 What Programmers Can Do
+- There are numerous ways programmers can affect performance—especially via **memory behavior**.
+- The upcoming material will take a **bottom-up path**: from **physical RAM & L1 caches** through higher cache levels, up to **OS-level memory controls**.
+- Focus stays on **memory-related optimizations**, since they often dominate runtime.
+
+**Key Points**
+- **Programmer impact is large**: small choices in data layout and access patterns can help—or hurt—significantly.
+- **Scope**: only **memory-centric** opportunities (not general CPU or I/O), but spanning hardware to OS interfaces.
+- **Structure**: begin with **low-level access (RAM/L1)** → **cache usage/prefetching** → **TLB/page size** → **NUMA placement** → **allocator/OS policies**.
+- **Goal**: convert theory (DRAM, caches, TLBs, NUMA) into **practical techniques** that raise sustained throughput and lower latency.
+
+**Mindset**
+- treat performance as **end-to-end memory pipelines**, not isolated tricks.
+
+**What to watch**
+- cache miss rates, TLB misses, bandwidth vs. latency, NUMA locality, write-back traffic.
 
 ---
 
 ### 6.1 Bypassing the Cache
+- **Non-temporal (streaming) stores/loads** let you move data without polluting caches when you won’t reuse it soon.
+- **Streaming stores** bypass read-for-ownership and rely on **write-combining** to emit full cache lines directly to memory.
+- In a 3000×3000 matrix init:
+  - **Row-major (sequential) writes**: ~0.048 s with normal or non-temporal stores (write-combining hides the cost).
+  - **Column-major (strided/random) writes**: normal ~0.127 s vs. non-temporal ~0.160 s (no combining → slower).
+- Newer CPUs add **streaming loads** (e.g., `movntdqa`) to read without filling caches, useful for one-pass reads.
+
+**Key Points**
+- **When to use streaming stores**
+  - Data is **produced once** and **not reused soon** (e.g., large zero/init buffers, final output frames, logging buffers).
+  - Replace `_mm_store_*` with `_mm_stream_*` variants (e.g., `_mm_stream_si128`, `_mm_stream_ps`).
+- **Alignment & grouping matter**
+  - Align destinations to **16 B (SSE)**; issue stores **back-to-back for the same cache line** so write-combining can fire.
+  - Example fills one 64 B line with four 16 B `_mm_stream_si128` stores.
+- **Ordering/fences**
+  - Non-temporal writes use **relaxed ordering**; insert an **SFENCE** (`_mm_sfence()`) before visibility assumptions/timing.
+- **Sequential vs. strided**
+  - **Sequential** NT stores can match cached throughput (controller combines writes → no RFO).
+  - **Strided/random** NT stores often lose: each touch may act like an isolated write (no combining, more DRAM activates).
+- **Don’t use NT when you will reuse soon**
+  - E.g., inner kernels of **matrix multiply** reuse outputs quickly—keep normal cached stores.
+- **Streaming loads (SSE4.1)**
+  - `_mm_stream_load_si128` (`movntdqa`) pulls a line into a small **streaming-load buffer**, not L1/L2.
+  - Read **all 16 B chunks of a line** before moving to the next; limited buffers → interleave at most a few streams.
+- **Other arches**
+  - PowerPC `dcbz` zeros a cache line w/o read-for-ownership (still allocates in cache; only writes zeros).
+
+**Practical checklist**
+- [ ] Confirm **no near-term reuse** of written data.
+- [ ] Ensure **16 B alignment**; batch **4×16 B** to fill each 64 B line.
+- [ ] Use **row-major (sequential) traversal** or **tile** to keep accesses combining-friendly.
+- [ ] End sequences with **`_mm_sfence()`** when you need write completion.
+- [ ] Avoid mixing temporal & non-temporal stores to the **same line** within a short window.
+
+**Typical use cases**
+- Large `memset`/buffer clears, one-pass encoders/decoders, streaming I/O staging buffers, framebuffers written once.
+
+**Caveats**
+- If a line is **already resident** in cache, some CPUs may still interact with it; aim for **cold destinations**.
+- Strided column writes: prefer **block-transpose** or **tiling** so inner loops are contiguous.
+- Measure: benefits depend on **cache hierarchy**, **write-combiner size**, and **memory controller** behavior.
 
 ---
 
 ### 6.2 Cache Access
+- Biggest wins come from optimizing **L1 cache** behavior first.
+- Core tactics: **improve spatial & temporal locality** and **align code/data** to cache-line boundaries.
+- Keep hot working sets small, contiguous, and repeatedly reused before eviction.
+
+**Key Points**
+- **Spatial locality**
+  - Use contiguous arrays; iterate in memory order.
+  - Prefer **SoA** (structure-of-arrays) over **AoS** for vectorizable loops.
+- **Temporal locality**
+  - Reuse data soon after load; hoist invariant/reused values outside inner loops.
+  - Tile/block loops so hot tiles fit in L1 (and L2 next).
+- **Working-set blocking**
+  - Choose tile sizes so: `(reads+writes) × element_size × live_arrays ≲ L1 size` (rule of thumb).
+  - Multi-level block: first for L1, then for L2.
+- **Alignment**
+  - Align hot arrays/structs to **cache-line size (typically 64 B)**.
+  - Keep frequently-touched fields at the **start** of a line; avoid crossing lines.
+- **Avoid conflict misses**
+  - Be wary of power-of-two strides; add padding to break unlucky set mapping.
+  - Pad arrays/rows so `stride % (cache_size/associativity)` isn’t constant.
+- **Prefetching**
+  - Hardware prefetch helps simple strides; for deeper loops, use `_mm_prefetch(ptr+ahead, _MM_HINT_T0)` sparingly.
+  - Use **NTA** prefetch only for one-time streams.
+- **Writes**
+  - Minimize write-allocate traffic: write full lines (memset/memcpy), batch stores, or use **streaming stores** for non-temporal data.
+  - Avoid read-modify-write on cold destinations; accumulate in registers then store.
+- **Branches & I-cache**
+  - Make hot loops straight-line when practical; reduce hard-to-predict branches.
+  - Keep hot code compact to fit L1I; inline only when it shrinks/helps the hot path.
+- **Concurrency**
+  - Prevent **false sharing**: place per-thread hot counters/state on separate lines (`alignas(64)`/padding).
+  - Pin related threads to cores that share higher-level caches (and keep data close).
+- **Measure & iterate**
+  - Use PMCs (e.g., `L1-dcache-load-misses`, `cycles`) and tools (perf, Cachegrind) to guide changes.
+  - Validate with A/B runs; cache work is workload- and CPU-specific.
+
+**Quick checklist**
+- [ ] Loop in memory order; tile to L1/L2.
+- [ ] Align hot arrays/structs to 64 B; avoid crossing lines.
+- [ ] Break power-of-two strides with padding.
+- [ ] Prefetch modestly; verify with PMCs.
+- [ ] Use streaming stores for one-pass outputs.
+- [ ] Eliminate false sharing (`alignas(64)` per-thread data).
+- [ ] Keep hot code small; reduce unpredictable branches.
+- [ ] Re-measure after each change.
+
+**Rules of thumb**
+- Default cache line: 64 B; design data & strides around that granularity.
+- Start with tiling and alignment; only add prefetch/streaming stores after profiling shows need.
 
 #### 6.2.1 Optimizing Level 1 Data Cache Access
+- Goal: make **L1** usage as effective as possible—iterate sequentially, reuse loaded lines before eviction, and align data/code.
+- Matrix-mul case study: fix the non-sequential access to `mul2` via **transpose** or **cache-line–sized blocking (tiling)**; add SIMD after memory layout is fixed.
+- Data layout matters: compress/pack structs, place “critical” fields first, align to cache-line size; avoid unaligned and conflict-miss patterns (power-of-two strides).
+- Results (N=1000 doubles, Core 2 @ 2.66 GHz):
+  - Original: **16.77e9 cycles (100%)**
+  - Transposed: **3.92e9 (23.4%)**
+  - Sub-matrix (cache-line tiling): **2.90e9 (17.3%)**
+  - +SIMD (SSE2): **1.59e9 (9.47%)** ≈ **3.35 GFLOPS** (from 318 MFLOPS)
+
+**Key Points**
+- **Sequential access pays**  
+  - Original triple loop walks `mul2` by columns → cache-line thrash.  
+  - Transpose `mul2` (or logically traverse as if transposed) so both inputs are read row-major.  
+  - Hardware prefetch then fills ahead effectively.
+- **Cache-line–sized blocking (tiling)**
+  - Let `CLS` be L1 line size (e.g., 64 B). For doubles, `SM = CLS / sizeof(double)`.  
+  - Block i/j/k by `SM`, compute **SM×SM** tiles so each loaded line is fully consumed before eviction.  
+  - Use pointer temporaries (`rres`, `rmul1`, `rmul2`) to avoid costly re-indexing/aliasing.
+- **Vectorization after memory is fixed**
+  - SSE2 can process 2 doubles/inst; apply once access is cache-friendly for an extra ~7% rel. win (vs. original).
+- **Struct layout & packing**
+  - Large structs that span multiple lines hurt when only a few fields are hot.  
+  - Use tools like `pahole` to spot **holes** and cross–cache-line fields; reorder to:  
+    1. fill alignment holes
+    2. co-locate fields used together
+    3. place likely **critical field first**.  
+  - Consider **splitting** cold fields (e.g., buyer info) from hot fields (price/paid) to reduce bandwidth.
+- **Alignment is non-negotiable**
+  - Align hot objects/arrays to **cache-line** boundaries (`__attribute__((aligned(64)))`, `posix_memalign`).  
+  - Unaligned accesses can cause **2× line fetches**; measured slowdowns: up to **~300%** (sequential in-L2), still **20–30%** on large working sets.
+- **Stack alignment & ABI**
+  - Respect platform stack alignment (e.g., x86-64 requires 16 B for SSE args).  
+  - Where legal (e.g., 32-bit x86 without SSE needs), `-mpreferred-stack-boundary=2` can trim alignment overhead; not generally OK on x86-64.
+- **Avoid conflict misses (set associativity)**
+  - L1 (virtually indexed) has limited associativity (e.g., 8-way, 32 KiB).  
+  - Power-of-two strides (e.g., every 4096 B) can map many hot lines to the **same set** → thrash (~10 cycles/elt vs ~3).  
+  - Fix: add **padding**, vary strides, or rebase arrays to de-phase set mappings.
+- **Banking (AMD note)**
+  - AMD L1 is banked; two loads/cycle only if requests hit different banks (or same bank/same index).  
+  - Group variables used together to improve banking parallelism.
+
+**Practical tips**
+- Detect cache line size at build (getconf LEVEL1_DCACHE_LINESIZE) and set CLS.
+- Tile loops so each loaded line is fully consumed before eviction.
+- Align arrays/objects to 64 B; avoid unaligned SIMD accesses.
+- Repack structs; split hot/cold; put critical field first.
+- Break power-of-two strides with padding/rebase.
+- Add SIMD after fixing memory access; measure with PMCs.
 
 #### 6.2.2 Optimizing Level 1 Instruction Cache Access
+- Instruction-cache (L1) performance hinges on **smaller, straighter code** and **smart layout** so the front-end predicts, fetches, and decodes efficiently.
+- Use compiler knobs to **balance size vs speed** (e.g., `-Os` vs `-O2/-O3`), **constrain inlining**, and **reorder cold blocks** out of the hot path.
+- Align **functions** and **non-fallthrough blocks** when helpful; be careful aligning **loops**, which can add jumps/no-ops and backfire.
+
+**Key Points**
+- **Keep code compact unless proven otherwise**
+  - `-Os` disables size-inflating opts; often faster if L1 pressure dominates.
+  - Big wins from inlining happen only if they enable further scalar/SIMD opts; otherwise they bloat I-cache.
+- **Control inlining deliberately**
+  - Limit global inlining with `-finline-limit=<N>`.
+  - Force when beneficial: `__attribute__((always_inline))`.
+  - Prevent when it hurts locality or duplicates hot code: `__attribute__((noinline))`.
+- **Make the hot path linear**
+  - Reorder blocks so the likely branch is fallthrough; push rare paths away.
+  - Use branch hints + block reordering:
+    ```c
+    #define likely(x)   __builtin_expect(!!(x), 1)
+    #define unlikely(x) __builtin_expect(!!(x), 0)
+
+    if (likely(cond)) { hot(); } else { cold(); }
+    ```
+  - Even better: **PGO** (profile-guided optimization) to auto-reorder based on real runs.
+- **Small, tight loops help front-end**
+  - Short inner loops can benefit from front-end loop streaming (e.g., LSD on Core 2) and stay resident in decode queues.
+- **Align where it pays**
+  - Cheapest wins: align **function entries** and **non-fallthrough targets** (fewer I-cache line splits, better decode).
+  - Be cautious aligning **loop headers**; it may inject padding or an extra jump on entry.
+  - GCC knobs:
+    - `-falign-functions=<N>`
+    - `-falign-jumps=<N>`
+    - `-falign-loops=<N>`
+    - (Avoid `-falign-labels` in general.)
+  - Use modest `N` values; alignment is to the next power of two ≥ `N`, so large `N` wastes space.
+- **When to inline vs not (rule of thumb)**
+  - Inline if: single call site, enables constant-prop/loop-invariant/SIMD, or removes abstraction overhead in a hot loop.
+  - Don’t inline if: many call sites in hot code, rare path, or it duplicates large cold pieces across the binary.
+
+**Practical GCC flag recipes**
+- Size-biased default: `-Os -freorder-blocks -fno-align-labels`
+- Speed-biased but I-cache aware: `-O2 -freorder-blocks -finline-limit=80 -falign-functions=16 -falign-jumps=8 -falign-loops=8`
+- Add **PGO** for layout: build with `-fprofile-generate`, run workloads, rebuild with `-fprofile-use`.
+
+**Diagnostics**
+- Inspect size & layout: objdump -d --visualize-jumps, nm -S, size.
+- Measure: front-end stalls, I-cache misses, branch miss rates (e.g., perf stat -e cycles, instructions, branch-misses,icache.misses).
+**Common pitfalls**
+-	Over-unrolling/inlining that pushes hot code beyond L1 → more stalls.
+-	Aligning every loop/label → extra padding/jumps, worse than the fix.
+-	Relying solely on __builtin_expect without validating with profiles.
 
 #### 6.2.3 Optimizing Level 2 and Higher Cache Access
+- Last-level caches (LLC: L2/L3/…) are costly to miss and are often **shared** across cores/threads, so your effective cache is smaller than the headline size.
+- For data reused more than once, **tile** work so the active working set fits **inside the LLC share** you actually get; otherwise prefetching can’t hide the latency.
+- **Hardcode L1 line size** for fine-grain tiling, but **detect LLC size at runtime** (it varies a lot across machines).
+- On Linux, read `/sys/devices/system/cpu/cpu*/cache/index*/{level,size,shared_cpu_map}` to compute a **safe per-thread LLC budget**.
+- Pick block sizes from that budget (and still leave headroom for code, libraries, stacks, and other threads).
+
+**Key Points**
+- **Two LLC realities**
+  - Misses at LLC ⇒ go to DRAM: very expensive.
+  - LLC is **shared** (often per-socket): your usable capacity ≈ `LLC_size / (#CPUs sharing it)`.
+- **When to care**
+  - If each data element is touched only once, caching won’t help much; don’t force it.
+  - If elements are **reused**, organize computation so that the reused subset fits in your **per-thread LLC budget**.
+- **Runtime sizing (Linux)**
+  - Find the highest `level` under `/sys/devices/system/cpu/cpu0/cache/index*/`.
+  - Read its `size` (e.g., `"8192K"`) and its `shared_cpu_map` (hex bitmask of logical CPUs).
+  - **Effective LLC share** (safe lower bound):  
+    `llc_share_bytes = size_bytes / popcount(shared_cpu_map)`
+  - Optionally scale by a safety factor `f∈(0,1)` to leave headroom (e.g., `f = 0.6`).
+- **Choosing a tile (example: 3-matrix working set)**
+  - For double-precision GEMM block of size `T×T`, three tiles live concurrently (A, B, C):  
+    `bytes ≈ 3 * T^2 * 8`.
+  - Require `3*T^2*8 ≤ f * llc_share_bytes`.  
+    So `T ≤ floor( sqrt( (f * llc_share_bytes) / 24 ) )`.
+  - Then **align T** to your L1 blocking size (e.g., multiple of `SM = L1_line_bytes / sizeof(double)`).
+- **Why not just assume the biggest cache?**
+  - LLC sizes differ by multiples (×2…×8+). Hardcoding penalizes most machines.
+  - L1 line size changes little; LLC sizes change a lot ⇒ detect at runtime.
+
+**Practical tips**
+- If you pin threads so fewer share the LLC than the bitmap implies, you may choose a larger tile (with care).
+- Libraries called inside the kernel loop (BLAS, RNG, I/O buffers) also consume cache; keep your f conservative.
+- NUMA: the location of the data vs. the socket that owns the LLC matters—pair tiling with NUMA locality.
+- Measure: confirm with hardware counters (LLC references/misses, DRAM bandwidth) and adjust T if miss rate rises.
 
 #### 6.2.4 Optimizing TLB Usage
+- There are **two TLB optimization levers**:
+  1. **Use fewer pages at a time** to cut TLB misses; and  
+  2. **Use fewer upper-level page-table directories** to make TLB lookups cheaper (less page-table memory, better cache hit rates).
+- Page faults are rarer but **far costlier** than TLB misses; over long runs, frequent TLB misses can still dominate.
+- **ASLR** spreads mappings across the address space (more directories). Only disable it if **maximum performance** is critical.
+- If you must place mappings explicitly (e.g., `mmap(MAP_FIXED)`), choose addresses with **page-directory boundaries** in mind.
+
+**Key Points**
+- **Reduce pages in use concurrently**
+  - Group hot code/data so that, at any moment, **fewer distinct pages** are touched.
+  - This differs from page-fault tuning: it’s not just “avoid faults once,” it’s **keep the active TLB working set small** continuously.
+- **Reduce page-table directory pressure**
+  - Widely scattered virtual regions force **more levels/directories** to be consulted on a miss/walk.
+  - Prefer **contiguous** virtual ranges when possible so fewer directories cover your working set.
+- **ASLR trade-off**
+  - Randomized placement increases address dispersion (more directories).  
+  - Turning ASLR off can help in **rare, performance-critical** cases; otherwise, keep it on.
+- **Fixed mappings caution**
+  - Using `MAP_FIXED` is risky. If you must, **align/choose** the target address to avoid straddling a **last-level page-directory** boundary.
+
+**When to act**
+- If profiling shows high ITLB/DTLB miss rates during steady-state hot loops, prioritize **page coalescing** in those regions.
+
+**Kernel note**
+- A kernel could avoid mappings that cross directory boundaries—this would **slightly constrain ASLR** but is not generally relied upon.
+
+**Practical workflow**
+- Optimize for **TLB locality** (tight page footprint), then consider directory locality; only as a last resort consider **disabling ASLR** during benchmarking.
 
 ---
 
 ### 6.3 Prefetching
+- **Goal of prefetching:** hide memory access latency by bringing data closer to the CPU before it’s needed.
+- **Pipelines & OoO help only for cache hits;** they can’t mask main-memory latency without unrealistically long queues.
+- **More cores ≠ solution** on non-OoO CPUs unless workloads are well-parallelized.
+- Two approaches: **hardware prefetching** (automatic, pattern-triggered) and **software prefetching** (explicit hints from code).
+
+**Key Points**
+- **Latency gap:** CPU speeds outpace DRAM; without help, cache misses stall execution.
+- **Pipeline limits:** Out-of-order execution overlaps work but mainly benefits **cache-resident** data.
+- **Core-scaling caveat:** Adding cores to hide stalls only works if the application is **parallel**.
+- **Prefetch types:**
+  - **Hardware prefetching:** CPU detects predictable access patterns and fetches ahead.
+  - **Software prefetching:** Programmer inserts prefetch hints to stage data early.
+
+**When it helps:**
+- Sequential or predictable strides benefit most; irregular/random patterns benefit less.
+
+**Trade-offs:**
+- Over-aggressive prefetching can waste bandwidth and pollute caches; distance/timing matters.
+
+**Next steps:**
+- Choose hardware defaults first; add software prefetches only where profiling shows sustained, predictable misses.
 
 #### 6.3.1 Hardware Prefetching
+- **Hardware prefetchers** kick in only after they see **≥2 cache misses** that form a recognizable pattern (adjacent lines or fixed **stride**).
+- Prefetch logic exists per cache level (L1/L1, L2+), and **L2+/LLC prefetchers are shared** across cores/threads with a limited number of **streams**.
+- **Prefetchers cannot cross page boundaries**, so you’ll still see misses at page edges unless software intervenes.
+- They track fairly small windows (≈ **hundreds of bytes**) and **don’t learn non-linear**/irregular patterns.
+- If harmful, hardware prefetching can be **tuned/disabled** (e.g., via MSRs on x86), but that’s a coarse, system-wide lever.
+
+**Key Points**
+- **Trigger rule:** Typically needs two+ sequential/strided **misses** before starting a stream; avoids spurious prefetch on random accesses.
+- **Stride support:** Modern designs recognize fixed-stride streams (not just adjacent lines).
+- **Stream budget:** ~**8–16 streams** tracked at higher levels; shared caches mean streams are **contended** across cores/SMT threads.
+- **Per-level units:** L1 has its own prefetcher(s); L2/LLC prefetchers serve all sharers of that cache level.
+- **Page boundary limit:** **Never crosses pages** to avoid unintended page faults/OS work; expect a miss at each boundary unless you prefetch or touch the next page explicitly.
+- **Pattern window:** Recognition typically limited to a **small address window** (≈ up to ~512 B); beyond that, patterns aren’t pursued.
+- **No non-linear learning:** Irregular or data-dependent jumps are treated as random → no prefetch benefit.
+- **When it backfires:** Can **waste bandwidth** and **evict useful lines** if mis-triggered or if too many streams are active.
+- **Mitigations:** 
+  - Reshape data/code to make hot paths **sequential & in-page**.
+  - Use **software prefetch** right before **page boundaries**.
+  - Consider **larger pages** to reduce boundary frequency.
+  - As a last resort, **disable** (entirely or “adjacent line” only) via **IA32_MISC_ENABLE** bits on Intel (privileged, kernel-level).
+ 
+**Practical tips**
+- Tile/stripe hot loops so working sets **advance linearly within a page**; avoid page-crossing in the inner loop.
+- Align arrays/tiles so inner strides **match cache-line size** and minimize TLB churn near boundaries.
+- For known strides, insert software prefetch with a **prefetch distance** that hides memory latency without polluting caches.
+- Use **huge pages** (when feasible) to reduce boundary hits and TLB pressure.
+
+**Diagnostics**
+- Profile: LLC/TLB misses, prefetch request/use rates, bandwidth saturation, and eviction spikes when enabling/disabling prefetchers.
+- Watch for **shared-LLC contention**: multiple threads can exhaust stream slots and degrade each other.
+
+**Edge knobs**
+- x86 `ud2` is sometimes used to **stop instruction-side speculation** past indirect branches—very niche; not a general data-prefetch fix.
+- System-wide prefetch disable is **blunt**: validate per-workload; other apps may regress.
 
 #### 6.3.2 Software Prefetching
+- **Software prefetching** lets you explicitly pull data into cache (or stream it) when hardware prefetchers can’t help—especially across **page boundaries** or for irregular strides.
+- On x86/x86-64 use `_mm_prefetch(ptr, hint)` with hints **T0/T1/T2/NTA** to target cache levels or mark data as **non-temporal**.
+- Proper **prefetch distance** matters: prefetch far enough ahead to cover latency, but not so far that you evict what you still need.
+- In a randomized pointer-chase with ~160 cycles of work per node (NPAD=31), prefetching ~**5 nodes ahead** cut miss cost by **~8%** once the working set exceeded L2.
+- AMD Family 10h adds **`prefetchw`** (brings line in **M** state) which helps when writes follow; misuse hurts.
+
+**Key Points**
+- **API & Hints**
+  - `_mm_prefetch(void* p, _MM_HINT_T0|T1|T2|NTA)` (in `<xmmintrin.h>`).
+  - **T0**: bring to L1 (inclusive caches) / lowest level (exclusive). Use when you’ll consume **immediately**.
+  - **T1/T2**: target higher levels to stage data without crowding L1 when the **immediate working set** is large.
+  - **NTA**: non-temporal; try to **avoid polluting** lower caches and write back directly on eviction—great for single-use streams.
+- **Safety/behavior**
+  - On x86, prefetch to **invalid pointers is ignored** by hardware (no fault), but pointless prefetches still waste bandwidth and can evict useful lines.
+- **Tuning distance**
+  - Pick distance so: `work_per_iter_cycles × distance ≥ mem_latency_cycles (+ cache fill)`.
+  - For the example (~160 cyc/iter, two cache lines per node), **distance ≈ 5** worked well.
+- **Measured effect**
+  - No win while the working set **fits in L2**; once it exceeds L2, software prefetching saved **~50–60 cycles/iter (~8%)**.
+- **Write-biased prefetch (AMD)**
+  - `prefetchw` (Fam 10h): fetches to L1 and sets state **M**; speeds up subsequent writes, but is **harmful** if no write occurs.
+- **Compiler help**
+  - `-fprefetch-loop-arrays` (GCC) can auto-insert prefetches for array loops; results vary—**profile** before keeping it.
+- **Instrumentation**
+  - Use PMU counters: hardware/software prefetches, **used** software prefetches, L1/L2/LLC misses, bandwidth, evictions.
+
+**Best practices**
+- Keep inner loops **in-page**; prefetch right before **page boundaries** (hardware can’t cross pages).
+- Use **T0** for near use, **T1/T2** when staging, **NTA** for streaming data you won’t revisit.
+- Consider **huge pages** to reduce boundary hits & TLB pressure (when practical).
+- Don’t flood L1: if the immediate working set > L1, avoid T0 everywhere.
+- Insert prefetches **sparingly** and near the producer of the address (avoid long dependency chains).
+
+**Tuning workflow**
+1. Locate hot misses (LLC/TLB) with PMU.
+2. Add one prefetch at a time; choose hint & distance.
+3. Re-measure: misses ↓, used-prefetch ↑, runtime ↓; if not, adjust or remove.
+
+**Caveats**
+- Over-prefetching can steal bandwidth and evict hot lines.
+- Shared caches mean prefetch streams are contended across cores/SMT.
+- prefetchw is AMD-specific (no standard Intel intrinsic).
 
 #### 6.3.3 Special Kind of Prefetch: Speculation
+- **Out-of-order (OOO) execution** can overlap independent ops, but it won’t hoist a **load above a potentially-aliasing store** because the addresses might match.
+- **Speculative/advanced loads** (e.g., IA-64 `ld8.a` … `ld8.c.clr`) let you *start* a load early, then **validate or re-load** later, hiding cache/memory latency without breaking correctness.
+- Compared to prefetching, speculative loads deliver a **register value** (ready for compute) instead of merely warming caches, and can reduce sensitivity to cache eviction.
+
+**Key Points**
+- **Why the plain load can’t move:** a preceding store (`st8 [r4]`) might target the same address as the load (`ld8 [r8]`). Until proven otherwise, the CPU must respect the **store→load ordering** to preserve semantics.
+- **Speculative-load pair (IA-64 example):**
+  - `ld8.a r6=[r8]` — begin an *advanced/speculative* load.
+  - … do unrelated work to create a latency-hiding gap …
+  - `ld8.c.clr r6=[r8]` — *confirm/clear*: if no conflict with the earlier store, keep the value; if there was a conflict, **re-load** so the result matches a normal `ld8`.
+- **When it helps:**
+  - Long-latency loads (L2/LLC/DRAM misses).
+  - Enough independent instructions between `ld*.a` and `ld*.c` to **cover latency**.
+  - Low alias probability between the store and the load.
+- **Costs/risks:**
+  - Extra instructions (issue bandwidth, register pressure).
+  - **Mispredicted** speculation triggers a re-load (lost work).
+  - Don’t use on `volatile`/MMIO; still follow the memory model.
+- **Relation to prefetching:**
+  - Prefetch: moves data toward caches (**no register result**), good cross-arch.
+  - Speculative load: produces a **ready value** (and, as used here, doesn’t rely on the cache line remaining resident), so compute can proceed immediately after the check.
+- **Portability reality:**
+  - IA-64 exposes these ops; most mainstream ISAs rely on hardware OOO + **software prefetch** instead.
+  - Portable wins: expose ILP, hoist loads safely, reduce aliasing (e.g., `restrict`), and prefetch where it pays.
+
+**Practical tuning**
+- Aim for a gap ≈ **(expected miss latency) / (avg work per cycle)** between `ld*.a` and `ld*.c`.
+- Unroll/software-pipeline loops to create independent work between the two.
+- Keep live values in registers to avoid spills; watch register pressure.
+
+**Help the reordering logic (even without ISA support)**
+- Use `restrict`/non-aliasing pointers so compilers/CPUs can hoist loads across unrelated stores.
+- Separate data that may alias; align data; avoid store→load hazards on the same line when possible (store-to-load forwarding pitfalls).
+**Measure**
+- Track load-miss latency, replay/reload events, machine clears, useful prefetches, and overall IPC to see if speculation actually hid latency.
 
 #### 6.3.4 Helper Threads
+- **Problem:** Manual software prefetching complicates loops (look-ahead logic, tuning distance, more instructions, bigger L1i footprint, limited outstanding prefetches).
+- **Alternative:** Run a **helper prefetch thread** that stays ahead of the main worker, touching data to pull it into a **shared cache** (ideally on the **sibling hyper-thread** of the same core).
+- **Results:** If the working set fits in L2, the helper **hurts** (≈10–60% overhead). Once the working set exceeds L2, the helper **helps** (≈25% faster) by overlapping memory latency with computation.
+- **Mechanics:** Pin threads to sibling HTs / shared caches, pace the helper so it doesn’t evict useful lines, and synchronize lightly (e.g., futex/pthreads). Use topology info (libNUMA or `/sys`) and cache size (`sysconf(_SC_LEVEL2_CACHE_SIZE)`).
+
+**Key Points**
+- **Why helper threads can win**
+  - Offloads look-ahead logic; **no loop contortions**.
+  - Real loads (not just prefetch hints) populate L2/L1 and **fill TLBs**.
+  - Main thread spends more time on ALU work while helper soaks **DRAM/LLC latency**.
+- **When they help**
+  - Working set **exceeds L2/LLC**, memory latency dominates, and main thread has **~100–200+ cycles** of work per element.
+  - HT or cores that **share a cache** (L2/L3). If no shared cache, benefit shrinks.
+  - NUMA-local memory; otherwise remote access can erase gains.
+- **When they hurt**
+  - Working set **fits in L2** → helper just competes for decode/ports and pollutes caches.
+  - Helper runs **too far ahead** → evicts prefetched lines before use.
+- **Tuning**
+  - **Distance** ≈ (miss latency cycles ÷ work/elem cycles) × (elems per cache line).
+  - **Throttle** with a bounded gap (ring buffer semantics) to avoid cache pollution.
+  - Use **L2 (or LLC) size** as an upper bound on the “in-flight” footprint.
+- **Placement & affinity**
+  - Pin main and helper to **sibling hyper-threads** (or cores sharing L2/L3).
+  - Discover siblings with **libNUMA** `NUMA_cpu_level_mask(..., level=1)` or `/sys/devices/system/cpu/*/topology/thread_siblings`.
+- **Caveats**
+  - Watch **bandwidth**: two threads can saturate memory/FSB and stall both.
+  - Limit **false sharing** on control variables (pad to cache line).
+  - Prefetcher cannot cross pages, but the helper’s real loads **will** fault/touch pages—consider `mlock` or warmup if page faults are costly.
+
+**Heuristics that work well**
+- Start with look-ahead ≈ (LLC miss latency / cycles per iter); clamp so the total touched bytes ≤ ~½ of shared cache.
+- Adapt: sample stall cycles or LLC-miss rate; nudge look-ahead up/down.
+
+**Diagnostics to validate**
+- LLC-load-misses, cycles-stalled-frontend/backend, mem-loads, mem-stores, prefetches, dtlb_load_misses.
+- Confirm threads share a cache (drop in misses, improved IPC).
+
+**If libNUMA isn’t available**
+- Read /sys/devices/system/cpu/cpu*/topology/{thread_siblings,core_siblings} to pair HTs / cores that share caches.
+
+**NUMA considerations**
+- Allocate data on the same node as the HT pair (first-touch or mbind/numa_alloc_onnode), or you’ll chase remote memory penalties.
 
 #### 6.3.5 Direct Cache Access
+- **Problem:** DMA-based I/O (e.g., NICs) writes packet data straight to RAM, so when the CPU is notified it **misses in cache** reading the header—adding hundreds of cycles per packet.
+- **Idea (DCA):** NIC + chipset tag the DMA with a **Direct Cache Access (DCA)** hint so the destination CPU **pre-populates its cache** with the packet header while the DMA completes.
+- **Result:** When the interrupt/notification fires, the OS’s header reads are likely **cache hits**, cutting per-packet latency and improving throughput—especially at high packet rates.
+
+**Key Points**
+- **Where it happens:** NIC issues DMA → Northbridge/memory controller forwards data on the FSB **with a DCA hint** → CPU snoops bus and **loads header into lowest cache** (hint is advisory; CPU may ignore).
+- **What’s cached:** Primarily the **packet header** (immediately consumed for routing/classification). Payload is typically handled later.
+- **Why it helps:** Removes a “cold read” at packet arrival time; saving **hundreds of cycles** per packet can compound massively at tens of thousands of packets/sec.
+- **Prereqs:** Tight **platform cooperation** (NIC, chipset, CPU) that supports the DCA hinting path; OS routes the interrupt to the **intended CPU** so the warmed cache is actually used.
+- **Scope:** Transparent to application code; benefit shows up in **kernel fast-path** of RX processing.
+
+**Simplified flow**
+1. NIC starts DMA of packet → marks transaction as **DCA**.
+2. Memory controller completes DMA to RAM **and** forwards header on bus with DCA flag.
+3. Target CPU **snoops & pulls** header into L1/L2 (as policy allows).
+4. NIC notifies CPU; OS inspects header → **cache hit**.
+
+**Operational notes**
+- DCA is a **hint**, not a guarantee; CPUs can choose to ignore it.
+- Gains are most visible on **latency-sensitive** and **high-pps** workloads.
+- Platform selection matters: without coordinated NIC/chipset/CPU support, **no DCA benefit**.
 
 ---
 
 ### 6.4 Multi-Thread Optimizations
+- Multi-threaded programs face three cache-related challenges: **concurrency (shared address space interactions), atomicity (correct coordination on shared data), and bandwidth (limited shared memory/IO paths).**
+- Best case is **disjoint working sets** per thread; shared data introduces **coherency/locking overhead** and can **saturate memory bandwidth**, hurting scaling.
+- Multi-process scenarios see similar effects, but fewer optimizations apply since processes don’t naturally share memory structures.
+
+**Key Points**
+- **Concurrency**
+  - Threads share one virtual address space → easy sharing, but also **cache interference** and **false sharing** risk.
+  - Ideal: partition data so **each thread mostly touches distinct cache lines**; overlap only at infrequent sync points.
+- **Atomicity**
+  - Shared updates require synchronization (locks/atomics), which trigger cache-coherency traffic (e.g., **RFO/MESI transitions**) and stall others.
+  - Contended atomics/locks serialize progress and can thrash “hot” cache lines, especially across cores/sockets.
+- **Bandwidth**
+  - Memory controllers, interconnects, and last-level caches are **shared resources**; multiple threads can **saturate them**.
+  - Even read-only streams can contend; writes are worse (dirty evictions, writebacks). Scaling flattens once **LLC or memory BW** becomes the bottleneck.
+
+**Practical implications**
+- **Partition**: sharding, per-thread chunks, and work stealing with coarse granularity.
+- **Avoid false sharing**: pad/align hot fields to cache-line size; group read-mostly data.
+- **Choose sync wisely**: prefer per-thread accumulators + periodic reduction; use atomics only on truly hot paths; avoid highly contended locks.
+- **NUMA/placement**: pin threads to cores, colocate their memory, minimize cross-node traffic.
+- **Throughput vs. latency**: batch updates to reduce coherence traffic; use non-temporal stores for one-shot output streams.
+- **Measure**: track LLC misses, coherency events, lock/atomic contention, and memory BW to find the scaling limit.
 
 #### 6.4.1 Concurrency Optimizations
+- **False sharing** happens when multiple threads write to different variables that live on the **same cache line**, triggering heavy coherency traffic (RFO/MESI transitions) and destroying scalability.
+- Benchmarks show extreme slowdowns when threads pound a single shared line (e.g., +390%, +734%, +1,147% time vs. separate lines on a 4-way P4 SMP). On a single-socket quad-core (shared L2 pairs), the penalty may appear small—but multi-socket systems expose the true cost.
+- Mitigate by **separating read-only/read-mostly vs. writable data**, **padding/aligning hot writable fields to cache-line boundaries**, and using **thread-local storage (TLS)** when each thread uses its own copy.
+
+**Key Points**
+- **Why it hurts**
+  - Writes require ownership: the line must be in **E/M state** in one core; competing writers force **RFO** handoffs each increment → serialized progress across cores/sockets.
+  - Even if threads touch different variables, sharing one line turns them into an implicit hotspot.
+- **When it’s visible**
+  - Multi-processor (multi-socket) systems: dramatic collapse in scaling.
+  - Single-socket, shared-LLC machines: impact can look minor for simple tests, but will reappear with more sockets or different access patterns.
+- **Data placement strategies**
+  1. **Read-only / init-once data** → keep together (e.g., `.rodata`, `.data.rel.ro`)—shared **S state** is cheap.
+  2. **Read-mostly** vs. **read-write** → separate sections to avoid mixing with highly written fields.
+  3. **Hot writable vars** → place on their **own cache line** (pad + align to `CLSIZE`), ideally grouped if they’re updated together.
+  4. **Per-thread private state** → make it **TLS** (`__thread`) to eliminate inter-thread line sharing.
+- **TLS trade-offs**
+  - Pros: no false sharing by design; simple to use.
+  - Cons: setup cost per thread; slightly higher addressing cost; **memory overhead** (TLS blocks per DSO may allocate as a group).
+- **Atomic update patterns (GCC builtins)**
+  1. `__sync_add_and_fetch(&var, 1)` — add, returns **new** value.
+  2. `__sync_fetch_and_add(&var, 1)` — add, returns **old** value.
+  3. CAS loop (`__sync_bool_compare_and_swap`) — flexible, can fold custom logic but higher contention cost.
+  - All still contend if `var` shares a cache line across threads; padding/partitioning still matters.
+
+**Practical recipes**
+- **Pad + align** a hot writer:
+  ```c
+  #define CLSIZE 64
+  struct {
+    struct { int bar; int xyzzy; } hot;
+    char pad[CLSIZE - sizeof(struct { int bar; int xyzzy; })];
+  } rwstruct __attribute__((aligned(CLSIZE))) = { .hot = {2,4} };
+  // use rwstruct.hot.bar / rwstruct.hot.xyzzy
+  ```
+- **Thread-local copy** to avoid sharing:
+  ```c
+  __thread int counter = 0;  // each thread has its own instance
+  ```
+- **Separate mostly-const data** via sections:
+  ```c
+  int foo = 1;
+  int baz = 3;
+  int bar   __attribute__((section(".data.ro"))) = 2; // read-mostly
+  int xyzzy __attribute__((section(".data.ro"))) = 4;
+  ```
+
+**Checklist**
+- Identify hot writes; ensure each thread updates **distinct cache lines**.
+- Group constants and read-mostly fields away from hot writers.
+- Prefer per-thread accumulators + periodic merge over shared counters.
+- Test on **true SMP (multi-socket)** hardware; microbenchmarks on a single socket can hide the issue.
 
 #### 6.4.2 Atomicity Optimizations
+- Concurrent writes to the **same memory location** are undefined unless you use **atomic operations**; otherwise increments can be lost due to independent cache reads/writebacks.
+- Atomic ops come in flavors (bit test, **CAS**, **LL/SC**, **atomic arithmetic**). Many ISAs expose only CAS or LL/SC; **x86/x86-64 also provide fast atomic arithmetic** (e.g., atomic add) that can outperform a CAS loop.
+- CAS loops are portable but often **much slower under contention** (extra loads, conditional store, retries, and more MESI/RFO traffic).
+- On x86/x86-64, atomicity is enabled via the **`lock` prefix**; you can **dynamically skip** it when running single-threaded to avoid the atomic cost.
+
+**Key Points**
+- **Why non-atomic increments lose updates**
+  - Two threads read old value from a shared line in **S** state → both add → whichever writes last wins → one increment is lost.
+- **Atomic choices**
+  - **Bit test/set**, **CAS** (compare-and-swap), **LL/SC** (load-linked/store-conditional), **atomic arithmetic** (`add`, `and`, etc. on memory; x86/x86-64).
+  - ISAs provide **either CAS or LL/SC** (functionally equivalent); **x86 also has atomic arithmetic** and it’s usually cheaper than a CAS loop.
+- **CAS vs atomic add (x86/x86-64, 4 threads, 1M increments)**
+  - | Method                 | Time |
+    |------------------------|------|
+    | Exchange-Add (fetch-add old) | 0.23s |
+    | Add-Fetch (return new)       | 0.21s |
+    | **CAS loop**                  | **0.73s** |
+  - CAS is slower due to **two memory ops**, conditional update, **retries**, and extra **RFO**/state transitions across cores.
+- **MESI/RFO perspective**
+  - Atomic arithmetic lets the core **hold ownership** and perform the read-modify-write as a unit → at most **one RFO** per iteration.
+  - CAS loops ping-pong the line and **fail** under overlap → repeated retries amplify traffic.
+- **Don’t universalize on CAS**
+  - Expose atomics at an abstraction level that can map to **native atomic arithmetic** where available; use CAS only when needed (e.g., conditional update semantics).
+- **Skip atomic costs when safe (x86)**
+  - Same instruction can be atomic or not; use a branch to **jump over the `lock` prefix** when only one thread is active:
+    ```asm
+    cmpl $0, multiple_threads
+    je 1f
+    lock
+    1: add $1, some_var
+    ```
+  - Worth it when single-threaded is common; atomic ops can cost ~100–200 cycles.
+
+**Portable increment patterns (GCC builtins)**
+1. **Add & get new**
+    ```c
+    for (int i = 0; i < N; ++i)
+     __sync_add_and_fetch(&var, 1);
+    ```
+2. **Add & get old**
+    ```c
+    for (int i = 0; i < N; ++i)
+     __sync_fetch_and_add(&var, 1);
+    ```
+3. **CAS loop (portable but slower under contention)**
+    ```c
+    for (int i = 0; i < N; ++i) {
+     int v, n;
+     do { v = var; n = v + 1; }
+     while (!__sync_bool_compare_and_swap(&var, v, n));
+    }
+    ```
+
+**Contention & layout still matter**
+- Even perfect atomics **fight** if many threads update the **same cache line**. Prefer **sharded counters** (per-thread/per-core) + periodic combine, and **pad/align** to cache lines to avoid false sharing.
+
+**Rule of thumb**
+- Use **native atomic arithmetic** when available for plain RMW ops; reserve **CAS/LLSC** for condition-dependent updates. Combine with good **data layout** to minimize coherence traffic.
 
 #### 6.4.3 Bandwidth Considerations
+- Even without cache-line contention, many-threaded programs can be bottlenecked by **memory bandwidth** shared across cores, hyper-threads, sockets, and the northbridge/FSB.
+- Use **hardware performance counters** to detect bus contention; if utilization is already high, adding threads won’t scale.
+- Improve by **placing threads** to share cache when they share data (reduce duplicate memory traffic), or to separate caches when data sets are independent. Enforce with **thread affinity**.
+
+**Key Points**
+- **Bandwidth limits**  
+  - Core frequencies far exceed DRAM bandwidth; dividing that bandwidth among many cores/threads makes stalls likely for large working sets.
+  - Counters (e.g., Core 2: `NUS_BNR_DRV`, bus utilization, RFO counts) reveal cycles waiting for the bus; values near saturation ⇒ poor scalability headroom.
+- **Scheduling for data locality**  
+  - Bad: two threads on different cache domains **reading the same data** ⇒ memory must serve it twice.  
+  - Better: co-locate such threads on cores **sharing a last-level cache** (or same socket) so the data is fetched **once** and reused.
+- **Scheduling for isolation**  
+  - If threads touch **distinct data sets**, pin them to **different cache domains** to avoid evicting each other and halving effective cache capacity/bandwidth.
+- **Thread affinity APIs (Linux)**  
+  - Process-level: `sched_setaffinity(pid, size, cpu_set_t*)`, `sched_getaffinity(...)`.
+  - Thread-level (pthreads):  
+    - runtime: `pthread_setaffinity_np(th, size, cpu_set_t*)`, `pthread_getaffinity_np(...)`  
+    - at creation: `pthread_attr_setaffinity_np(attr, size, cpu_set_t*)`, `pthread_attr_getaffinity_np(...)`
+  - CPU set helpers: `CPU_ZERO`, `CPU_SET`, `CPU_CLR`, `CPU_ISSET`, `CPU_COUNT` and `_S` variants for dynamic sizes.
+  - Dynamic allocation: `CPU_ALLOC_SIZE(n)`, `CPU_ALLOC(n)`, `CPU_FREE(set)`.
+  - Current CPU (best-effort): `sched_getcpu()` (may change immediately after call; use for hints, not invariants).
+- **NUMA tie-in**  
+  - Treat caches as a small “NUMA” layer: choose affinities that match **data placement**. Use NUMA libraries (/sys, libnuma) to compute masks for shared vs. isolated domains.
+
+**Practical workflow**
+1. Measure bus/FSB (or memory controller) pressure with perf counters.
+2. If near saturation, co-locate threads that share data; separate those that don’t.
+3. Enforce with affinity; verify with counters (lower RFOs/loads, fewer stall cycles).
+4. On NUMA, also bind memory (first-touch, mbind) to the socket you pin to.
+
+**Caveats**
+- Affinity masks are inherited and may change (admin tools, CPU hotplug). Always re-check if critical.
+- Over-constraining affinity can leave CPUs idle while others are oversubscribed—monitor and adjust.
 
 ---
 
 ### 6.5 NUMA Programming
+- NUMA changes memory **access cost by page location**, so performance now depends on *where* pages live, not just *whether* they’re cached.  
+- These ideas extend to **cache hierarchies** (LLC sharing vs. not), so thread placement and memory placement must be coordinated.  
+- On Linux, practical NUMA control is via **policies and bindings**: `set_mempolicy`, `mbind`, `get_mempolicy`, plus page migration (`migrate_pages`, `move_pages`).  
+- `libnuma` (numactl) mainly wraps syscalls; detailed topology still comes from **sysfs**. Understanding **memory policies** is the next step.
+
+**Key Points**
+- **Why NUMA matters**
+  - Uniform memory: all pages “equal” → optimize page faults and cache use.
+  - NUMA: **per-node latency/bandwidth** differ; page locality and thread placement directly affect runtime.
+  - With many-core CPUs, even single-socket systems behave “NUMA-like” at the **cache** level (shared vs. private LLC).
+- **Unifying caches & NUMA**
+  - Threads on cores that **share an LLC** can reuse lines cheaply; separate-LLC placement can double memory traffic.
+  - Treat cache groups like mini NUMA nodes when deciding **affinity**.
+- **Linux tooling overview**
+  - Topology & distances: `/sys/devices/system/cpu/**/cache` and `/sys/devices/system/node/`.
+  - `libnuma` is a **convenience layer**; it does not expose all topology details.
+  - Core syscalls:
+    - `mbind` — bind a specific VA range to nodes/policy.
+    - `set_mempolicy` / `get_mempolicy` — set/get **default** policy for future allocations.
+    - `migrate_pages` — move *all* pages of a PID between node sets.
+    - `move_pages` — move or query **selected** pages’ node locations.
+- **Design implications**
+  - First-touch allocation + **thread affinity** gives good defaults; refine with `mbind`/`move_pages` for hot pages.
+  - Interleave (striping) can help balance, but **local bind** wins for latency-sensitive hot sets.
+  - Always measure; bus/memory counters reveal when bandwidth or cross-node traffic dominates.
+
+**Typical workflows**
+- *Local-hotset apps:* pin worker to node X → `set_mempolicy(MPOL_BIND, {X})` → allocate → run.
+- *Throughput apps with many producers/consumers:* consider `MPOL_INTERLEAVE` across active nodes, but keep communicating threads on the **same socket/LLC**.
+- *After-the-fact correction:* sample hot pages, then `move_pages` them to the worker’s node.
+
+**Placement + affinity**
+- Use `pthread_setaffinity_np`/`sched_setaffinity` so threads stay where their pages are.
+- On start-up, allocate per-thread buffers **after** pinning to ensure first-touch lands on the right node.
+
+**When to use each policy (preview)**
+- `MPOL_BIND`: lowest latency for node-local hot data.
+- `MPOL_INTERLEAVE`: even bandwidth use across nodes; good for streaming/throughput.
+- `MPOL_PREFERRED`: soft “try local node first,” fallback elsewhere.
+
+**Caveats**
+- ASLR & allocator behavior can scatter heaps; pin threads and **touch** memory intentionally.
+- Over-constraining affinity can starve CPUs; monitor and adjust.
+- Page migration has cost; amortize by moving **long-lived hot** pages, not short-lived ones.
 
 #### 6.5.1 Memory Policy
+- Linux NUMA **memory policies** let unmodified programs behave reasonably on NUMA by steering where pages are allocated.
+- Policies are **inherited by child processes**, so tools like `numactl` can launch a program with a chosen policy.
+- The kernel picks a policy via a **hierarchy**: VMA policy (and a special shared-memory policy) → task policy → system default.
+- **System default**: allocate “local” to the requester; for multithreaded processes the “local” node is the process’s **home node** (the node that first ran the process), unless you override it.
+
+**Key Points**
+- **Policies**
+  - `MPOL_BIND`: allocate **only** from the specified node set; if none available, allocation **fails**.
+  - `MPOL_PREFERRED`: try the given nodes **first**; if unavailable, **fallback** to others.
+  - `MPOL_INTERLEAVE`: spread allocations **evenly** across the specified nodes  
+    - For VMA-based policies: node chosen by **offset** within the region.  
+    - For task-based policies: node chosen by a **free-running counter**.
+  - `MPOL_DEFAULT`: defer to the next level in the hierarchy (ultimately system default).
+- **Hierarchy & scope**
+  - **VMA policy** (per-mapping) overrides task policy; **shared memory** uses a specialized VMA policy class.
+  - If no VMA policy: use the **task policy**; if none: use the **system default**.
+- **Operational notes**
+  - Policies are **per-address-range** (VMA) or **per-task**; both can coexist.
+  - Using `MPOL_BIND` can cause **allocation failures** on pressure; `PREFERRED` is safer when capacity varies.
+  - `INTERLEAVE` improves bandwidth balance but may increase **latency** vs strict locality.
+
+**Practical usage**
+- Launch with a policy:
+  - Bind: `numactl --membind=0,1 --cpunodebind=0,1 ./app`
+  - Preferred: `numactl --preferred=2 ./app`
+  - Interleave: `numactl --interleave=0-3 ./app`
+- Programmatic control:
+  - Set default for future allocations: `set_mempolicy(...)`
+  - Bind a specific region: `mbind(addr, len, MPOL_*, nodemask, ...)`
+
+**Choosing a policy (rules of thumb)**
+- **Latency-sensitive hot data** with pinned threads → `MPOL_BIND` to the thread’s node(s).
+- **Throughput/streaming** workloads spanning nodes → `MPOL_INTERLEAVE`.
+- **Mixed/variable** footprints → `MPOL_PREFERRED` to nudge locality without hard failures.
+
+**Remember**
+- Policies are inherited by children; combine with **CPU affinity** so first touch lands on the intended node.
+- Review shared memory segments separately—they use their **own policy class**.
 
 #### 6.5.2 Specifying Policies
+- `set_mempolicy(mode, nodemask, maxnode)` sets the **task (thread)–level NUMA memory policy** for **future** page allocations only.
+- It **does not migrate** already-allocated pages; first touch after the call determines placement under the new policy.
+- `mode` is one of `MPOL_BIND`, `MPOL_PREFERRED`, `MPOL_INTERLEAVE`, or `MPOL_DEFAULT`; `nodemask` and `maxnode` define eligible nodes.
+
+**Key Points**
+- **Scope**
+  - Affects **only the calling thread** (kernel “task”), not the whole process.
+  - VMA- and shared-memory policies can override task policy (policy hierarchy).
+- **Nodemask & maxnode**
+  - `nodemask` is a bitset of NUMA nodes; `maxnode` is the bit **count** the kernel will consider (typically **highest-node-id + 1**).
+  - Bits ≥ `maxnode` are ignored; out-of-range or empty masks (when required) → `EINVAL`.
+- **Modes**
+  - `MPOL_BIND`: allocate **only** from `nodemask`; if none available, allocation **fails**.
+  - `MPOL_PREFERRED`:
+    - `nodemask == NULL` → prefer **local** node.
+    - Otherwise: prefer the **lowest-numbered set bit** in `nodemask`, fall back elsewhere if needed.
+  - `MPOL_INTERLEAVE`: round-robin across nodes in `nodemask` (by VMA offset or a per-task counter).
+  - `MPOL_DEFAULT`: ignore `nodemask`; revert to default policy (usually **local/first-touch**).
+- **Allocation vs reservation**
+  - `mmap` reserves address space; **physical pages are allocated on first access**.
+  - If policy changes between page touches, a single mapping can span **multiple nodes**.
+- **No retroactive effect**
+  - Existing pages stay put. To change placement, use `mbind(...)` (per-range) or `move_pages(...)` / `migrate_pages(...)`.
+- **Return & errors**
+  - Returns `0` on success, `-1` with `errno` (e.g., `EINVAL` for bad mode/mask, `EFAULT` for bad pointer).
+
+**Workflow tips**
+- Combine with **CPU/thread affinity** so the thread touches pages on the intended node.
+- After changing policy, **touch** (read/write) the mapping to allocate under the new policy.
+- For portable sizing, query node count (e.g., via libnuma) and size `nodemask` accordingly.
 
 #### 6.5.3 Swapping and Policies
+- When Linux swaps out pages, it **forgets their NUMA node**. On page-in, placement is recomputed using the **current policy** (e.g., first-touch/`set_mempolicy`), so a page may return on a **different node**.
+- Pages can also move because of **kernel migration** (balancing/space pressure) or **other processes** calling `mbind(...)` on shared mappings.
+- Therefore, any “page → node” mapping you observe is **ephemeral**. Treat it as a **hint**, and query again when you need accurate info with `get_mempolicy(...)` (or `move_pages(...)` for per-page location).
 
-#### 6.5.4 VMA Policy
+**Key Points**
+- **Swap behavior**
+  - Clean pages are dropped; dirty pages are written to swap. On fault-in, Linux **does not restore** the original node; it chooses a node per **current policy** and availability.
+- **Why mappings change**
+  - **Swapping**: node tag is lost; re-fault can land elsewhere.
+  - **Shared pages**: another process can relocate with `mbind(...)`.
+  - **Kernel auto-migration**: may move pages if a node is full or to rebalance.
+- **Implications**
+  - Don’t cache page→node mappings in user space; they **age quickly**.
+  - Performance can drift as hot data “comes back” on a different node.
+  - For stable placement, combine **thread affinity + mempolicy + pre-fault**; optionally **pin** memory to avoid swap.
+- **How to observe (just-in-time)**
+  - `get_mempolicy(...)`:
+    - With `MPOL_F_ADDR|MPOL_F_NODE`, returns the node **for a given address** (current or would-be under policy).
+    - Without `MPOL_F_ADDR`, reports the **calling thread’s** default policy/mask.
+  - `move_pages(...)` with `nodes=NULL` queries the **actual node** for many pages at once.
+  - `/proc/<pid>/numa_maps` is useful, but still only a **snapshot**.
+- **How to stabilize (when needed)**
+  - Use `mlock/mlockall` to avoid swapping critical buffers.
+  - Choose a policy (`MPOL_BIND`, `MPOL_PREFERRED`, `MPOL_INTERLEAVE`) via `set_mempolicy(...)` / `mbind(...)`.
+  - **Pre-fault** pages (touch them) after setting policy and **pin the thread** to the target CPU/node.
+  - For shared, read-mostly mappings, consider **multiple local copies** per node when memory allows.
+
+**Operational tips**
+- If node stability is crucial: mlockall(MCL_CURRENT|MCL_FUTURE), set policy via set_mempolicy/mbind, touch pages to fault them on the intended node, and keep threads affined.
+- Expect that once memory pressure triggers swap or balancing, associations can change—re-query before making placement-sensitive decisions.
+  
+#### 6.5.4 Virtual Memory Area (VMA) Policy
+- `mbind(start, len, mode, nodemask, maxnode, flags)` sets a **VMA-level NUMA policy** for the address range `[start, start+len)`. `start` must be **page-aligned**; `len` is rounded up to page size.
+- By default (`flags=0`), it **only sets policy for future faults**—it does **not move existing pages**.
+- Optional flags:
+  - `MPOL_MF_STRICT`: fail if any page lies outside `nodemask` (and, with move flags, fail if any such page cannot be moved).
+  - `MPOL_MF_MOVE`: **migrate pages owned by this process’s page tables** into `nodemask`.
+  - `MPOL_MF_MOVEALL` (privileged): **migrate all pages** in range (even shared with other processes) into `nodemask`.
+
+**Key Points**
+- **Policy vs. placement**
+  - `mbind` sets the **VMA policy** (where *future* faults place pages). It does not retroactively move pages unless `MOVE`/`MOVEALL` is set.
+  - Use `set_mempolicy(...)` for a **thread’s default** future allocations; use `mbind(...)` to **pin a region’s policy**.
+- **Alignment & sizing**
+  - `start` must be **page-aligned**; `len` is **rounded up** to page size.
+  - Best used **before touching** memory (e.g., after `mmap` and before first access), unless migrating with flags.
+- **Flags behavior**
+  - `STRlCT` alone: just **validate**; does **not** move pages.
+  - `MOVE`: best-effort migrate pages **exclusively referenced** by this process.
+  - `MOVEALL`: also migrates **shared** pages; requires capability (e.g., `CAP_SYS_NICE`/`CAP_NICE`) and can impact other processes.
+- **Typical flow**
+  - Reserve: `mmap(..., PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0)`.
+  - Bind policy: `mbind(p, len, MPOL_BIND, nodemask, maxnode, 0)`.
+  - **Then touch** pages to fault them on desired node(s).  
+    - If pages already faulted, optionally add `MPOL_MF_MOVE` to migrate.
+- **Choosing `mode`**
+  - `MPOL_BIND`: allocate **only** from `nodemask` (fail if not possible).
+  - `MPOL_PREFERRED`: try `nodemask` (or lowest-set node); fall back elsewhere.
+  - `MPOL_INTERLEAVE`: distribute pages across `nodemask` (by offset/counter).
+  - `MPOL_DEFAULT`: revert to system/task default.
+- **Caveats**
+  - `MOVE`/`MOVEALL` available since Linux **2.6.16**.
+  - Migration may **pause** the process and can **fail** if pages are pinned/locked/shared in disallowed ways.
+  - Swapping and kernel auto-balancing may later **relocate** pages; consider `mlock/mlockall` for critical data.
+
+**Practical tips**
+- Combine mbind with thread affinity so the CPU and memory node match.
+- For interleave (MPOL_INTERLEAVE), bind before touching to get even spread.
+- For latency-sensitive regions, consider mlock and pre-fault to avoid swap-induced relocations.
+- Verify placement with move_pages(pid=0, ...) or /proc/<pid>/numa_maps (snapshot only).
 
 #### 6.5.5 Querying Node Information
+- `get_mempolicy(int *policy, const unsigned long *nmask, unsigned long maxnode, void *addr, int flags)` queries **NUMA policy/state** for an address.
+- With `flags == 0`, it returns the **governing policy** for `addr`: VMA policy if present, else task policy, else system default. Node set (if relevant) is returned via `nmask`.
+- `MPOL_F_NODE`: if governing policy is `MPOL_INTERLEAVE`, `*policy` becomes the **index of the next node** that will receive an allocation for `addr`.
+- `MPOL_F_ADDR`: `*policy` becomes the **index of the node that currently backs the page** containing `addr`.
+
+**Key Points**
+- **Policy resolution order**: VMA (if any) → task policy → system default.
+- **Interleave insight** (`MPOL_F_NODE`): lets you anticipate **where the *next* page** will fault in—useful to align upcoming thread placement.
+- **Actual placement** (`MPOL_F_ADDR`): tells you **where the *current* page lives**—useful for migration decisions or picking the most local worker thread.
+- **Volatility**:
+  - **CPU/node of a thread** can change due to scheduling.
+  - **Page placement** is comparatively stable, but can change via swap, kernel rebalancing, or explicit migration; treat queried results as **snapshots**, not invariants.
+- **libNUMA conveniences**:
+  - `NUMA_mem_get_node_idx(addr)` → node index for one address.
+  - `NUMA_mem_get_node_mask(addr, size, ..., dest)` → nodes covering a range (by policy/placement).
+  - `NUMA_cpu_to_memnode(cpuset → memnodeset)` maps CPUs to their local memory nodes.
+  - `NUMA_memnode_to_cpu(memnodeset → cpuset)` maps memory nodes back to local CPUs.
+- **Typical uses**:
+  - Pick **thread affinity** to match the node holding the data.
+  - Decide **whether/where to migrate pages** before a phase change.
+  - Combine with `mbind/set_mempolicy` to control future faults.
+
+**Practical tips**
+- Use MPOL_F_ADDR to pick the closest worker to the data; or migrate pages first, then bind worker threads.
+- Use MPOL_F_NODE during interleaved allocations to pre-place threads on upcoming nodes.
+- Re-query when making scheduling/migration decisions; don’t cache results long-term.
+- Pair with mbind/set_mempolicy and thread affinity for end-to-end control of data & compute locality.
 
 #### 6.5.6 CPU and Node Sets
+- **CPU sets** let admins partition CPUs *and* memory nodes to constrain processes—useful for SMP/NUMA without changing application code.
+- The interface is a **pseudo-filesystem** (traditionally mounted at `/dev/cpuset`); each directory is a cpuset with tunable files.
+- Root cpuset initially contains **all CPUs and all memory nodes**; child cpusets inherit then refine those masks.
+- A process in a cpuset has its **CPU affinity and NUMA memory policies masked** by that cpuset’s `cpus` and `mems`.
+- Assignment is simple: **echo PIDs into `tasks`** of the target cpuset; restrictions are mostly invisible unless a mask becomes empty.
+
+**Key Points**
+- **Mount & layout**
+  - Mount: `mount -t cpuset none /dev/cpuset` (mount point must exist).
+  - Root directory exposes: `cpus` (allowed CPUs), `mems` (allowed memory nodes), `tasks` (member PIDs).
+- **Create & configure cpusets**
+  - Make a subdirectory → a **new cpuset** inheriting parent settings.
+  - Write CPU list to `cpus` and memory nodes to `mems` to narrow the set.
+- **Process assignment**
+  - Add a process by writing its PID to the cpuset’s `tasks` file.
+  - From then on, its **schedulable CPUs = affinity ∩ cpuset.cpus** and its **NUMA node choices = mempolicy ∩ cpuset.mems**.
+- **Behavior & errors**
+  - Generally **no errors**: masking happens transparently.
+  - Errors surface if masking yields an **empty set** (no CPUs or no mem nodes).
+- **Scope & controls**
+  - Designed for **admin control** when code/changes aren’t possible.
+  - Additional knobs exist (e.g., exclusivity, memory-pressure behavior) in cpuset files.
+- **Terminology**
+  - “CPU sets” here are **not** the `cpu_set_t` type used by `sched_setaffinity`; same words, different mechanisms.
+
+**Practical tips**
+- Use cpusets to isolate noisy workloads or keep NUMA-sensitive jobs near their memory.
+- Remember masking: even if an app calls sched_setaffinity/mbind, it can’t escape its cpuset’s cpus/mems.
+- Keep masks non-empty before moving tasks; empty masks will cause failures.
+- Group related processes into the same cpuset to reduce cross-socket memory traffic on NUMA.
+
+**Troubleshooting**
+- If a task won’t run on certain CPUs or faults allocating memory on certain nodes, check the effective masks in its cpuset.
+- Review additional files in the cpuset directory for exclusivity and memory pressure behaviors (see Documentation/cpusets.txt in the kernel tree).
 
 #### 6.5.7 Explicit NUMA Optimizations
+- When many threads across NUMA nodes need the same data, **locality rules alone won’t fix contention**.
+- For **read-only data**, the best fix is **per-node replication** so each node reads its local copy.
+- For **writable data**, use **per-node accumulation** (reduce/merge later) or, if necessary, **page migration**—but only when the write intensity amortizes the copy cost.
+
+**Key Points**
+- **Read-only: replicate**
+  - Keep a per-node pointer table; lazily allocate a local copy on first use.
+  - If a thread migrates to a different node later, it can keep working (may briefly hit remote memory until it refreshes the pointer).
+- **Writable: avoid shared hot pages**
+  - Prefer **node-local buffers** to accumulate results, then **combine** them (periodically or at the end).
+  - If direct shared updates are required and are **bursty/non-concurrent across nodes**, consider **migrating pages** to the active node—only if the migration cost is amortized.
+- **Restricting threads to the memory’s node** underuses the machine; favor strategies that **use all nodes** while keeping memory access local.
+- **Thread moves happen**
+  - Schedulers try to keep threads near their data, but moves can happen; code should tolerate **temporary remote hits**.
+
+**Writable patterns**
+- Per-node reduce:
+  - node_buf[node] += partial; (local)
+  - Periodic/global merge step to combine all node_buf[].
+- Page migration:
+  - Use mbind(..., MPOL_BIND|MPOL_MF_MOVE) or move_pages() only when writes are heavy and mostly from one node for a while.
+
+**Practical tips**
+- Batch work so each thread stays on a node long enough to benefit from locality.
+- For read-mostly structures that change rarely, version and refresh per-node copies on update.
+- Measure before migrating: migration is a full page copy; ensure enough subsequent local accesses.
+
+**Failure modes to watch**
+- Replicated data that becomes stale (add clear refresh/invalidations).
+- Migrating pages too aggressively → thrashing.
+- Over-serializing merges; make reductions hierarchical or asynchronous.
 
 #### 6.5.8 Utilizing All Bandwidth
+- When caches don’t help (streaming/one-time writes), **remote-node DRAM writes can be as fast as local** on some systems, while also **freeing local-memory bandwidth**.
+- This can improve total throughput **if** the interconnect and the remote node’s memory controller have spare bandwidth and you **avoid write-allocate** penalties.
+- The win is **workload- and platform-dependent**; validate with targeted measurements before adopting.
+
+**Key Points**
+- **When it helps**
+  - Access pattern is **streaming/non-temporal** (little to no reuse; caches ineffective).
+  - Local memory controller is the bottleneck; inter-socket link(s) + remote controller have headroom.
+  - You can **pin threads** and **bind pages** so the write stream targets the intended remote node.
+- **How to do it (Linux/NUMA)**
+  - **Bind the target buffer** to a remote node (`mbind`/`set_mempolicy` with `MPOL_BIND`).
+  - **Pin the writing thread** away from that node (so traffic goes over the interconnect).
+  - Use **non-temporal stores** (SSE/AVX `movnt*`) to avoid write-allocate/RFO and cache pollution; ensure **64-byte alignment** and **full-line writes**; end a batch with `sfence`.
+  - On AMD (Fam 10h+), consider **`prefetchw`** to obtain M-state earlier (only if you will write).
+- **When it hurts**
+  - Any **reuse** of written data soon after (you’ll pay remote-read latency).
+  - Remote node is busy (you’ll **steal** its DRAM bandwidth).
+  - Small, irregular, or misaligned writes (you’ll trigger write-allocate and coherence traffic).
+  - High NUMA factors / saturated interconnect: gains vanish or go negative.
+
+**Validation checklist**
+- Measure write bandwidth and FSB/UPI/HT link utilization with perf/PMCs.
+- Compare local vs. remote streaming write rates with and without non-temporal stores.
+- Confirm minimal later reads from the remote-written region (or plan a staged handoff/merge).
+- Watch remote node for headroom (its own workloads, LLC miss rate, DRAM BW).
+
+**Operational tips**
+- Batch writes into large, aligned ranges to maximize write-combining.
+- Separate hot read-mostly structures from one-time write streams.
+- If remote data will be consumed later on that remote node, you may net a double win (write offload now, local read later).
 
 [back to top](#table-of-contents)
