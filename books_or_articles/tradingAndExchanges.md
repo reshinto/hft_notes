@@ -13,6 +13,8 @@
 
 ### 3 The Trading Industry
 
+[back to top](#table-of-contents)
+
 ### 4 Orders and Order Properties
 -	Orders are trade instructions that specify buy or sell terms.
 -	Trading strategies are built from orders and their precise instructions.
@@ -203,64 +205,172 @@
 |Market-if-touched order|Very rare|Demands immediacy and supplies resiliency|Triggered when price touches or moves through the touch price|Fast execution following trigger|Uncertain price impact|
 |Market-not-held order|Common among institutions|Broker decides whether to offer or take liquidity|Whatever the broker decides|Expert brokers may make better trading decisions with better information|Trader loses control over the broker|
 
+[back to top](#table-of-contents)
+
 ### 5 Market Structures
+
+[back to top](#table-of-contents)
 
 ### 6 Order-driven Markets
 
+#### 6.1 ORAL AUCTIONS
+
+**6.1.1 Order Precedence Rules**
+
+**6.1.1.1 Price Priority**
+
+**6.1.1.2 Time Precedence**
+
+**6.1.1.3 Public Order Precedence**
+
+**6.1.2 The Trade Pricing Rule**
+
+**6.1.3 Trading Floors**
+
+#### 6.2 RULE-BASED ORDER-MATCHING SYSTEMS
+
+**6.2.1 Order Precedence Rules**
+
+**6.2.1.1 Order Precedence Ranking Example**
+
+**6.2.2 The Matching Procedure**
+
+**6.2.2.1 Order- matching Example**
+
+**6.2.3 Trade Pricing Rules**
+
+#### 6.3 THE UNIFORM PRICING RULE AND SINGLE PRICE AUCTIONS
+
+**6.3.1 Single Price Auction Example**
+
+**6.3.2 Supply and Demand**
+
+**6.3.2.1 Supply and Demand Schedules**
+
+**6.3.3 Trader Surpluses**
+
+**6.3.3.1 Trader Surpluses in the Single Price Auction Example**
+
+#### 6.4 THE DISCRIMINATORY PRICING RULE AND CONTINUOUS TWO-SIDED AUCTIONS
+
+**6.4.1 Continuous Trading Example**
+
+**6.4.2 Discriminatory Versus Uniform Pricing Rules**
+
+**6.4.3 Continuous Markets Versus Call Markets**
+
+#### 6.5 THE DERIVATIVE PRICING RULE AND CROSSING NETWORKS
+
+**6.5.1 Price Ownership**
+
+**6.5.2 Problems with Derivative Pricing**
+
+**6.5.2.1 Stale Prices and Well-informed Traders**
+
+**6.5.2.2 Price Manipulation**
+
+[back to top](#table-of-contents)
+
 ### 7 Brokers
+
+[back to top](#table-of-contents)
 
 ## Part II: The Benefits of Trade
 
 ### 8 Why People Trade
 
+[back to top](#table-of-contents)
+
 ### 9 Good Markets
+
+[back to top](#table-of-contents)
 
 ## Part III: Speculators
 
 ### 10 Informed Traders and Market Efficiency
 
+[back to top](#table-of-contents)
+
 ### 11 Order Antitipators
 
+[back to top](#table-of-contents)
+
 ### 12 Bluffers and Market Manipulation
+
+[back to top](#table-of-contents)
 
 ## Part IV: Liquidity Suppliers
 
 ### 13 Dealers
 
+[back to top](#table-of-contents)
+
 ### 14 Bid/Ask Spreads
+
+[back to top](#table-of-contents)
 
 ### 15 Block Traders
 
+[back to top](#table-of-contents)
+
 ### 16 Value Traders
+
+[back to top](#table-of-contents)
 
 ### 17 Arbitrageurs
 
+[back to top](#table-of-contents)
+
 ### 18 Buy-Side Traders
+
+[back to top](#table-of-contents)
 
 ## Part V: Origins of Liquidity and Volatility
 
 ### 19 Liquidity
 
+[back to top](#table-of-contents)
+
 ### 20 Volatility
+
+[back to top](#table-of-contents)
 
 ## Part VI: Evaluation and Prediction
 
 ### 21 Liquidity and Transaction Cost Measurement
 
+[back to top](#table-of-contents)
+
 ### 22 Performance Evaluation and Prediction
+
+[back to top](#table-of-contents)
 
 ## Part VII: Market Structures
 
 ### 23 Index and Portfolio Markets
 
+[back to top](#table-of-contents)
+
 ### 24 Specialists
+
+[back to top](#table-of-contents)
 
 ### 25 Internalization, Preferencing, and Crossing
 
+[back to top](#table-of-contents)
+
 ### 26 Competition Within and Among Markets
+
+[back to top](#table-of-contents)
 
 ### 27 Floor Versus Automated Trading Systems
 
+[back to top](#table-of-contents)
+
 ### 28 Bubbles, Crashes, and Circuit Breakers
 
+[back to top](#table-of-contents)
+
 ### 29 Insider Trading
+
+[back to top](#table-of-contents)
