@@ -142,30 +142,85 @@
 |Continuous trading market|Trades arranged as orders arrive|“Orders match continuously through the day.”|
 |Call market|Orders collected and processed together|“All orders processed at one time.”|
 
-**Mechanisms & Relationships**
-- Clear order terms `→` Higher chance of getting the desired trade.
--	Strong submission strategy `→` Better outcomes and fewer missed trades.
--	Understanding matching rules `→` Better timing and effective market use.
--	Seeing how orders form liquidity `→` Better choices to trade now or wait.
--	Offering liquidity `→` Creates opportunities; can improve market quality.
--	Taking liquidity `→` Uses opportunities; also changes market quality.
--	Same instructions `+` different market type `→` Different order properties.
--	Shared nomenclature `→` Faster, more accurate trader communication.
-
-**Common Pitfalls or Misunderstandings**
-- Vague order terms lead to poor fills. Fix: Specify exact terms.
-- Ignoring submission timing hurts results. Fix: Plan when to send.
-- Not learning market rules causes mistakes. Fix: Study matching rules.
-- Confusing offer and take liquidity. Fix: Decide your role before sending.
-- Assuming all markets act the same. Fix: Check the market type first.
-- Skipping shared terminology. Fix: Use standard market words and phrases.
-
 **Mini Recap**
 - Orders define what you trade, when, how, and on what terms.
 - Strategy and timing of orders drive trading outcomes and liquidity.
 - Market type changes order properties, even with the same instructions.
 
 #### 4.1 WHAT ARE ORDERS, AND WHY DO PEOPLE USE THEM?
+- Orders are instructions to brokers and exchanges that arrange trades.
+- Orders specify instrument, side, size, and any extra conditions.
+- Most traders need orders because they cannot arrange trades personally.
+- Dealers arrange their own trades and do not use orders.
+- Carefully written orders protect interests when market conditions change.
+- Faster traders gain advantage; speed helps submit, cancel, and adjust orders.
+- Clear standard orders reduce communication errors in fast market settings.
+- This chapter defines standard orders and explains their main properties.
+
+**Core Ideas with Examples**
+1. What an order specifies
+    - An order states instrument, side, size, and needed conditions.
+    - Why it matters
+      - Clear instructions improve chances of getting the intended trade.
+    - Example A (concrete): A sell order includes a price limit and time validity.
+    - Example B (contrast): A buy order allows partial fill, executed whenever possible.
+2. Types of order conditions
+    - Orders can set price limits, validity, timing, and partial fill rules.
+    - Why it matters
+      - Conditions control when and how trades are executed.
+    - Example A (concrete): A trader limits acceptable price and forbids partial fills.
+    - Example B (contrast): Another trader allows partial fills during the trading session.
+3. Anticipating change and managing contingencies
+    - Slow traders must anticipate change and write contingencies into orders.
+    - Why it matters
+      - Poor contingencies risk bad fills or missed opportunities.
+    - Example A (concrete): An order is canceled and resubmitted as conditions change.
+    - Example B (contrast): Cancellation is slow, and the old order trades undesirably.
+4. Speed and competitive advantage
+    - Faster response to market changes gives a strong advantage.
+    - Why it matters
+      - Speed improves submitting, canceling, and adjusting orders promptly.
+    - Example A (concrete): Computerized traders monitor and adjust orders automatically and quickly.
+    - Example B (contrast): Manual submission is slower and loses good trading chances.
+
+**An order example**
+- Harry sells only if price, time, and size conditions are satisfied.
+- Why it matters
+  - Combining conditions ensures the trade matches exact intentions.
+- Example A (concrete): All-or-nothing requires trading the entire 7,600 shares at once.
+- Example B (contrast): Day order requires execution during the current trading session.
+
+**Definitions (Jargon → Simple)**
+
+|Term|Meaning|Example|
+|----|-------|-------|
+|Order|Instruction that explains how a trade should be arranged|“Buy this, with these conditions.”|
+|Instrument|The specific asset to trade|“Shares of XOM.”|
+|Buy / Sell|Direction of the trade|“Buy shares” or “Sell shares.”|
+|Conditions|Extra requirements attached to an order|“Only during today.”|
+|Price limit|Lowest sell or highest buy price the trader accepts|“Sell no less than 41.05.”|
+|Validity|How long the order remains active|“Only during the session.”|
+|Execution timing|When the order may be executed|“Execute only today.”|
+|Partial fill|Whether smaller-than-total fills are allowed|“Fill all at once or nothing.”|
+|Venue|Where the order is presented|“Send to a chosen exchange.”|
+|Counterparty|The other trader you are willing to trade with|“Trade only with specified parties.”|
+|Broker|Agent who handles orders for traders|“Broker sends the order.”|
+|Exchange|Marketplace that arranges trades|“Exchange matches orders.”|
+|Dealer|Trader who arranges trades personally|“Decides on the spot.”|
+|Cancel / Resubmit|Withdraw an order and submit a new instruction|“Cancel old, send new.”|
+|Floor trader|Trader operating on the trading floor|“Acts quickly in person.”|
+|Computerized trader|Trader using computers to monitor and adjust|“Systems update orders fast.”|
+|Standard orders|Common order types understood by all traders|“Shared, recognized terms.”|
+|Properties|Features that control order behavior|“Controls price or timing.”|
+|Trading session|The current period when trading occurs|“Execute during today’s session.”|
+|All-or-nothing|Requires full quantity to trade in one transaction|“Trade all 7,600 or none.”|
+|Day order|Valid only during the current trading day|“Expires after the session.”|
+|Limit|Sets the acceptable price boundary for execution|“Sell at least 41.05.”|
+
+**Mini Recap**
+- Orders encode what to trade, how, and under which conditions.
+- Speed and clarity matter; they change outcomes in fast markets.
+- Standard orders and defined properties prevent mistakes and protect intentions.
 
 #### 4.2 SOME IMPORTANT TERMS
 
