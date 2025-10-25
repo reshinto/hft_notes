@@ -280,6 +280,56 @@
 - Spreads, quotations, and order states shape execution quality and trading speed.
 
 #### 4.3 MARKET ORDERS
+- Market orders instruct to trade at the best price now available.
+- They usually fill fast, but sometimes at inferior prices.
+- Impatient traders use market orders to demand liquidity with certainty.
+- Execution depends on order size and current market liquidity.
+- Small market orders usually fill immediately with little price effect.
+- Small buys hit the best ask; small sells hit the best bid.
+
+**Core Ideas with Examples**
+1. Market order: trade now at the best available price
+    - A market order tells the market to trade at today’s best price.
+    - Why it matters: It gets the trade done quickly without specifying a price.
+    - Example A (concrete): A market buy executes at the current best asking price.
+    - Example B (contrast): A market sell executes at the current best bid price.
+2. Speed versus price quality
+    - Market orders usually fill fast, but price quality can suffer.
+    - Why it matters: Quick fills may sometimes occur at inferior execution prices.
+    - Example A (concrete): A market order completes quickly during active trading conditions.
+    - Example B (contrast): The same order sometimes fills at inferior prices when conditions change.
+3. Who uses market orders and why
+    - Impatient traders use market orders to be sure they will trade.
+    - Why it matters: They demand liquidity instead of waiting for better quoted prices.
+    - Example A (concrete): A trader needs certainty now and submits a market buy order.
+    - Example B (contrast): Another trader seeks certainty and sends a market sell order immediately.
+4. Execution depends on size and liquidity
+    - Results depend on the order’s size and available market liquidity.
+    - Why it matters: Larger size or thin liquidity can lead to worse prices.
+    - Example A (concrete): With ample liquidity, a small order fills with little price effect.
+    - Example B (contrast): With limited liquidity, a market order may fill at inferior prices.
+5. Typical behavior of small market orders
+    - Small market orders usually fill immediately at the best quotes.
+    - Why it matters: Small size helps avoid moving prices or missing top-of-book quotes.
+    - Example A (concrete): A small market buy trades at the best, lowest asking price.
+    - Example B (contrast): A small market sell trades at the best, highest bid price.
+6. Market Order Example: APWR quotes and Bill’s execution
+    - Quotes show prices and sizes; Bill’s small buy hits the best ask.
+    - Why it matters: The example shows immediate fill at the publicized best price.
+    - Example A (concrete): Dealers bid 36.80 for 500 shares and offer 36.85 for 400.
+    - Example B (contrast): Bill buys 200 shares at 36.85, matching the best ask size.
+
+**Definitions (Jargon → Simple)**
+
+|Term|Meaning|Example|
+|----|-------|-------|
+|Market order|Instruction to trade now at the best available price|“Buy now at current best.”|
+|Best ask|The lowest asking price available right now|“36.85 shown to sell.”|
+|Best bid|The highest bid price available right now|“36.80 shown to buy.”|
+|Liquidity|How much you can trade without moving the price|“Enough size at quotes.”|
+|Inferior price|A worse execution price for your side|“Buy fills too high.”|
+|Size|The quantity available at a quoted price|“Offer good for 400.”|
+|Quote|A displayed bid or ask with a price and size|“Bid 36.80 for 500.”|
 
 **4.3.1 Market Orders Pay the Spread**
 
