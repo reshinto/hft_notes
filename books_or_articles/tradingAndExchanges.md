@@ -331,7 +331,68 @@
 |Size|The quantity available at a quoted price|“Offer good for 400.”|
 |Quote|A displayed bid or ask with a price and size|“Bid 36.80 for 500.”|
 
+**Mini Recap**
+- Market orders trade now at the best available quoted price.
+- Speed is high, but inferior prices can occur with limited liquidity.
+- Small orders typically fill immediately at the best bid or best ask.
+
 **4.3.1 Market Orders Pay the Spread**
+- Market order traders pay the bid/ask spread through their executions.
+- A quick round-trip shows the total cost equals the whole spread.
+- Per trade, the transaction cost equals half of the spread.
+- The spread is the price of immediacy for market orders.
+- With no extra information, midpoint value is the best value estimate.
+- Paying above midpoint to buy is liquidity cost for immediacy.
+- Selling below midpoint also pays liquidity cost for immediacy.
+
+**Core Ideas with Examples**
+1. Market order traders pay the bid/ask spread
+    - Market orders trade now and pay the bid/ask spread cost.
+    - Why it matters: Using immediacy has a direct, quantifiable execution cost.
+    - Example A (concrete): Amy buys at 102 when the best offer is 102.
+    - Example B (contrast): She later sells at 100 when the best bid is 100.
+2. Round-trip example reveals the full spread cost
+    - A buy then sell at unchanged quotes loses the entire spread.
+    - Why it matters: The simple sequence shows how spread costs accumulate.
+    - Example A (concrete): Buy 102 with best bid 100 and best offer 102.
+    - Example B (contrast): Sell 100 assuming the best bid did not change afterward.
+3. Per-trade cost equals half of the spread
+    - Two trades split the spread, so each trade costs half.
+    - Why it matters: Traders can plan costs per execution, excluding commissions.
+    - Example A (concrete): Amy’s two trades lose the spread; each trade loses half.
+    - Example B (contrast): Text notes “transaction cost per trade… exclusive of commissions.”
+4. Spread is the price of immediacy for market orders
+    - Immediacy has a price; for market orders, it is half-spread.
+    - Why it matters: Traders pay for certainty to trade right now.
+    - Example A (concrete): Buying now at 102 pays 1 above estimated value.
+    - Example B (contrast): Selling now at 100 gives 1 below estimated value.
+5. Midpoint as best estimate when trader is uninformed
+    - With no extra information, value equals the average of quotes.
+    - Why it matters: The midpoint value explains the measured liquidity cost.
+    - Example A (concrete): Quotes 100 and 102 imply midpoint value of 101.
+    - Example B (contrast): Amy is uninformed; erratic behavior supports that assumption.
+6. Buy above midpoint and sell below midpoint each pay half-spread
+    - Paying above, or receiving below, midpoint equals half-spread cost.
+    - Why it matters: It shows symmetric liquidity costs for buys and sells.
+    - Example A (concrete): Amy paid 102 for a bond worth 101; cost is 1.
+    - Example B (contrast): She received 100 for a bond worth 101; cost is 1.
+
+**Definitions (Jargon → Simple)**
+
+|Term|Meaning|Example|
+|----|-------|-------|
+|Bid/ask spread|Difference between best ask and best bid|“102 minus 100 equals 2.”|
+|Best offer / Best ask|Lowest price a seller is currently willing to accept|“Best offer is 102.”|
+|Round-trip|A buy followed by a sell of the same instrument|“Buy then sell quickly.”|
+|Immediacy|Ability to trade immediately without waiting|“Trade right now.”|
+|Midpoint value|Average of best bid and best offer|“(100 + 102) / 2 = 101.”|
+|Uninformed trader|Trader with no extra information about value|“Behavior appears erratic.”|
+|Liquidity cost|Execution loss paid to trade immediately|“Pay 1 above midpoint.”|
+
+**Mini Recap**
+- Market orders trade now and pay for immediacy through the spread.
+- The round-trip shows full spread loss; each side costs half.
+- Midpoint explains why buys and sells each pay symmetric liquidity costs.
 
 **4.3.2 Price Improvement**
 
