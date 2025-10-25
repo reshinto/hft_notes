@@ -52,83 +52,63 @@
 -	Choices to offer or take liquidity affect overall market quality.
 -	Order properties depend on market type: continuous versus call markets.
 
-
 **Core Ideas with Examples**
 
 1. Orders as trade instructions
-     - Plain meaning: Orders tell what to trade, buy or sell, and terms.
-     - Why it matters: Clear instructions help traders get the trades they want.
-     - Example A (concrete): A trader cannot negotiate, so submits a buy order.
-     - Example B (contrast): Another trader specifies sell, size, timing, and price terms.
-     - Signal words in the text: “Orders are trade instructions.”; “what terms.”
-
+    - Orders tell what to trade, buy or sell, and terms.
+    - Why it matters: Clear instructions help traders get the trades they want.
+    - Example A (concrete): A trader cannot negotiate, so submits a buy order.
+    - Example B (contrast): Another trader specifies sell, size, timing, and price terms.
 2. Orders build trading strategies
-     - Plain meaning: Orders are the basic parts of every trading plan.
-     - Why it matters: Good building blocks create strong, workable trading actions.
-     - Example A (concrete): A plan uses several orders to reach a target position.
-     - Example B (contrast): A vague plan with unclear orders fails to execute.
-     - Signal words in the text: “fundamental building blocks of trading strategies.”
-
+    - Orders are the basic parts of every trading plan.
+    - Why it matters: Good building blocks create strong, workable trading actions.
+    - Example A (concrete): A plan uses several orders to reach a target position.
+    - Example B (contrast): A vague plan with unclear orders fails to execute.
 3. Importance of order submission strategy
-     - Plain meaning: How and when you send orders matters a lot.
-     - Why it matters: It can decide a good trade, a bad one, or none.
-     - Example A (concrete): Right order at right time results in a good trade.
-     - Example B (contrast): Wrong order timing leads to a costly or missed trade.
-     - Signal words in the text: “most important determinant of your success.”
-
+    - How and when you send orders matters a lot.
+    - Why it matters: It can decide a good trade, a bad one, or none.
+    - Example A (concrete): Right order at right time results in a good trade.
+    - Example B (contrast): Wrong order timing leads to a costly or missed trade.
 4. Markets match orders using rules
-     - Plain meaning: Many markets pair buy and sell orders by set rules.
-     - Why it matters: Knowing rules helps you use the market effectively.
-     - Example A (concrete): A submitted buy order is matched when rules permit.
-     - Example B (contrast): Without rule knowledge, a trader mis-times their order.
-     - Signal words in the text: “set of rules to match buy and sell orders.”
-
+    - Many markets pair buy and sell orders by set rules.
+    - Why it matters: Knowing rules helps you use the market effectively.
+    - Example A (concrete): A submitted buy order is matched when rules permit.
+    - Example B (contrast): Without rule knowledge, a trader mis-times their order.
 5. Understanding orders reveals liquidity
-     - Plain meaning: Knowing orders helps you see where liquidity comes from.
-     - Why it matters: Liquidity controls whether you can trade when you choose.
-     - Example A (concrete): A visible order shows a trading chance for others.
-     - Example B (contrast): No suitable orders means you cannot trade now.
-     - Signal words in the text: “Liquidity is the ability to trade when you want.”
-
+    - Knowing orders helps you see where liquidity comes from.
+    - Why it matters: Liquidity controls whether you can trade when you choose.
+    - Example A (concrete): A visible order shows a trading chance for others.
+    - Example B (contrast): No suitable orders means you cannot trade now.
 6. Orders offer or take liquidity
-     - Plain meaning: Some orders offer liquidity; others take liquidity quickly.
-     - Why it matters: These choices change available opportunities and market quality.
-     - Example A (concrete): An order presents an opportunity, so it offers liquidity.
-     - Example B (contrast): Another order seizes that opportunity and takes liquidity.
-     - Signal words in the text: “offer liquidity”; “take liquidity”; “affect market quality.”
-
+    - Some orders offer liquidity; others take liquidity quickly.
+    - Why it matters: These choices change available opportunities and market quality.
+    - Example A (concrete): An order presents an opportunity, so it offers liquidity.
+    - Example B (contrast): Another order seizes that opportunity and takes liquidity.
 7. Traders choose orders by properties
-     - Plain meaning: Orders have properties that help solve trading problems.
-     - Why it matters: Picking the right properties aligns with your trading goals.
-     - Example A (concrete): A trader selects order properties that fit their needs.
-     - Example B (contrast): Poorly chosen properties fail to solve the problem.
-     - Signal words in the text: “what properties they have”; “best solve their trading problems.”
-
+    - Orders have properties that help solve trading problems.
+    - Why it matters: Picking the right properties aligns with your trading goals.
+    - Example A (concrete): A trader selects order properties that fit their needs.
+    - Example B (contrast): Poorly chosen properties fail to solve the problem.
 8. Market nomenclature matters
-     - Plain meaning: Traders use special words to speak clearly and fast.
-     - Why it matters: Shared terms prevent errors and support quick decisions.
-     - Example A (concrete): A trader uses precise terms to avoid confusion.
-     - Example B (contrast): Unfamiliar terms cause delays and communication mistakes.
-     - Signal words in the text: “specialized words and phrases”; “market nomenclature.”
-
+    - Traders use special words to speak clearly and fast.
+    - Why it matters: Shared terms prevent errors and support quick decisions.
+    - Example A (concrete): A trader uses precise terms to avoid confusion.
+    - Example B (contrast): Unfamiliar terms cause delays and communication mistakes.
 9. Same instructions, different properties by market type
-     - Plain meaning: Order instructions mean the same, but properties can differ.
-     - Why it matters: The market type changes how identical orders behave.
-	   - Example A (concrete): In a continuous trading market, trades occur as orders arrive.
-     - Example B (contrast): In call markets, all orders process at the same time.
-     - Signal words in the text: “same meanings… properties differ”; “continuous trading market”; “call markets.”
-
+    - Order instructions mean the same, but properties can differ.
+    - Why it matters: The market type changes how identical orders behave.
+	  - Example A (concrete): In a continuous trading market, trades occur as orders arrive.
+    - Example B (contrast): In call markets, all orders process at the same time.
 10. Scope of this chapter
-	- Plain meaning: This chapter focuses on orders in continuous trading markets.
-	- Why it matters: It sets the context for the properties discussed here.
-	- Example A (concrete): Assumes orders arrive and trades are arranged continuously.
-	- Example B (contrast): Call market details are examined in a later chapter.
-	- Signal words in the text: “assume… continuous trading market”; “chapter 6.”
+    - This chapter focuses on orders in continuous trading markets.
+    - Why it matters: It sets the context for the properties discussed here.
+    - Example A (concrete): Assumes orders arrive and trades are arranged continuously.
+    - Example B (contrast): Call market details are examined in a later chapter.
 
 **Definitions (Jargon → Simple)**
 
-|Term|Simple meaning|Tiny example|
-|----|--------------|------------|
+|Term|Meaning|Example|
+|----|-------|-------|
 |Order|Instruction to buy or sell with specific terms|“Buy now with these terms.”|
 |Trading strategy|Plan built from one or more orders|“Use several orders to build a position.”|
 |Order submission strategy|How and when you send your orders|“Send the right order at the right time.”|
@@ -148,14 +128,6 @@
 - Market type changes order properties, even with the same instructions.
 
 #### 4.1 WHAT ARE ORDERS, AND WHY DO PEOPLE USE THEM?
-- Orders are instructions to brokers and exchanges that arrange trades.
-- Orders specify instrument, side, size, and any extra conditions.
-- Most traders need orders because they cannot arrange trades personally.
-- Dealers arrange their own trades and do not use orders.
-- Carefully written orders protect interests when market conditions change.
-- Faster traders gain advantage; speed helps submit, cancel, and adjust orders.
-- Clear standard orders reduce communication errors in fast market settings.
-- This chapter defines standard orders and explains their main properties.
 
 **Core Ideas with Examples**
 1. What an order specifies
@@ -223,6 +195,89 @@
 - Standard orders and defined properties prevent mistakes and protect intentions.
 
 #### 4.2 SOME IMPORTANT TERMS
+
+**Core Ideas with Examples**
+1. Bids, offers, and conveying willingness to trade
+    - Bids and offers show willingness to buy or sell. Traders quote them directly or via orders.
+    - Why it matters: Clear bids and offers help arrange trades quickly and correctly.
+    - Example A (concrete): A trader quotes an offer while arranging their own trade.
+    - Example B (contrast): Another trader sends an order, which conveys their bid to brokers.
+2. What quotes include: prices and sizes, with common terms
+    - Quotes include prices and quantities, called sizes, that traders accept.
+    - Why it matters: Shared terms prevent confusion when trades are arranged under time pressure.
+    - Example A (concrete): Traders say bid price and offer price to describe acceptable prices.
+    - Example B (contrast): They also say asking price, bidding price, or simply bid and ask.
+3. Firm prices versus soft prices; orders are usually firm
+    - Firm prices can be demanded for trade. Soft prices can be revised.
+    - Why it matters: Knowing firmness shows whether a quoted price is truly actionable.
+    - Example A (concrete): A firm bid obligates the quoter to trade at that price.
+    - Example B (contrast): A soft ask may be changed before anyone trades at it.
+4. Best bid, best offer, and market quotations (BBO and NBBO)
+    - The best bid is highest bid. The best offer is lowest offer.
+    - Why it matters: A market quotation reports these best prices, called the BBO.
+    - Example A (concrete): Many markets continuously publicize their market quotations to all traders.
+    - Example B (contrast): The NBBO reports the best bid and offer in the United States.
+5. The bid/ask spread, inside spread, touch, and links to liquidity
+    -	The bid/ask spread is best ask minus best bid. It is the inside spread.
+    -	Why it matters: A small spread, with many standing orders, usually indicates a liquid market.
+    -	Example A (concrete): The English call the spread the touch in their market usage.
+    -	Example B (contrast): Sports betting markets call the spread the vigorish or vig.
+6. Offering liquidity: standing limit orders and Joe’s day limit bid
+    - An order offers liquidity when it gives others a chance to trade.
+    - Why it matters: Offering liquidity supplies trading opportunities and supports market functioning.
+    - Example A (concrete): Joe bids for IBM at 100 dollars, valid only for today.
+    - Example B (contrast): Joe’s order limits the price he will pay and provides liquidity.
+7. “Offer” has two meanings; liquidity as a service sold by dealers
+    - Offer can mean offering an item, or offering liquidity as a service.
+    - Why it matters: Seeing liquidity as a service explains dealer profits from clients.
+    - Example A (concrete): A trader offers shares for sale at their chosen asking price.
+    - Example B (contrast): A dealer offers liquidity, earning money by filling client demands.
+8. Standing orders are open offers that persist until filled or canceled
+    - Standing orders are open orders that last until filled, expired, or canceled.
+    - Why it matters: Outstanding orders let others trade when they choose to trade.
+    - Example A (concrete): Joe’s order stands until someone sells to him, or it expires.
+    - Example B (contrast): He can cancel it before close, ending the open offer to trade.
+9. Demanding liquidity and seeking immediacy; Sue takes Joe’s standing order
+    - Traders who want to trade quickly demand liquidity and seek immediacy.
+    - Why it matters: Taking liquidity executes now by accepting someone’s standing price or quote.
+    - Example A (concrete): Sue sells 100 IBM shares at 100 dollars by taking Joe’s offer.
+    - Example B (contrast): Immediacy is one dimension of liquidity.
+10. Trade prices and inferior prices
+    - Filled order prices are trade prices. Some fills are inferior prices.
+    - Why it matters: High buy fills and low sell fills are inferior outcomes.
+    - Example A (concrete): A buy order that fills at a high price is inferior.
+    - Example B (contrast): A sell order that fills at a low price is inferior.
+
+**Definitions (Jargon → Simple)**
+
+|Term|Meaning|Example|
+|----|-------|-------|
+|Bid|A quoted willingness to buy at a stated price|“Bid to buy shares.”|
+|Offer / Ask|A quoted willingness to sell at a stated price|“Offer to sell shares.”|
+|Size|The quoted quantity available to trade|“100 shares offered.”|
+|Firm price|A price that others can demand to trade at|“You must trade there.”|
+|Soft price|A price that can be revised before trading|“You might change it.”|
+|Best bid / Best offer|Highest bid and lowest offer in the market|“Market’s top prices.”|
+|BBO|Market quotation reporting best bid and best offer|“Publicized best prices.”|
+|NBBO|Best bid and offer anywhere in the United States|“Nationwide best prices.”|
+|Bid/ask spread|Difference between best ask and best bid|“Space between the two.”|
+|Inside spread / Touch|Other names for the bid/ask spread|“English call it touch.”|
+|Vigorish|Spread term in sports betting markets|“Bookie’s spread term.”|
+|Offer liquidity|Provide others a chance to trade against you|“Place a standing bid.”|
+|Take demand / Demand liquidity|Trade immediately by accepting a standing quote|“Hit an existing offer.”|
+|Standing order / Open order|An open offer that persists until filled or canceled|“Order remains active.”|
+|Immediacy|Ability to trade right now, without waiting|“Execute at once.”|
+|Trade price|The actual price at which an order fills|“Executed price printed.”|
+|Inferior price|Undesirable execution price relative to side|“Buy high is inferior.”|
+|Agency order|Order a broker represents for a client|“Client order handled.”|
+|Proprietary order|Order a trader represents for their own account|“Firm’s own trade.”|
+|Pending|Order submitted to broker, awaiting acceptance|“Held for checks.”|
+|Working|Accepted order, not yet filled or canceled|“Active in the market.”|
+
+**Mini Recap**
+- Bids and offers express willingness to trade, directly or through orders.
+- Liquidity is offered by standing orders and demanded by traders needing immediacy.
+- Spreads, quotations, and order states shape execution quality and trading speed.
 
 #### 4.3 MARKET ORDERS
 
