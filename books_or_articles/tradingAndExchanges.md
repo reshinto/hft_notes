@@ -381,7 +381,9 @@
 
 |Term|Meaning|Example|
 |----|-------|-------|
+|Market order|Instruction to trade now at the best available price|“Buy now at 102.”|
 |Bid/ask spread|Difference between best ask and best bid|“102 minus 100 equals 2.”|
+|Best bid|Highest price a buyer is currently willing to pay|“Best bid is 100.”|
 |Best offer / Best ask|Lowest price a seller is currently willing to accept|“Best offer is 102.”|
 |Round-trip|A buy followed by a sell of the same instrument|“Buy then sell quickly.”|
 |Immediacy|Ability to trade immediately without waiting|“Trade right now.”|
@@ -395,6 +397,53 @@
 - Midpoint explains why buys and sells each pay symmetric liquidity costs.
 
 **4.3.2 Price Improvement**
+- Market orders can trade better than current bid and offer in negotiated markets.
+- Such better fills are called price improvement in the text.
+- A trader steps in front to offer a better price to you.
+- Price improvement often occurs when the spread is wide and orders small.
+- Price improvement lowers the cost of liquidity for incoming market orders.
+- Specialists may improve price due to exchange regulations on public quotes.
+
+**Core Ideas with Examples**
+1. Price improvement in negotiated markets
+    - In negotiated markets, market orders may beat the posted prices.
+    - Why it matters: You might receive a better execution than the displayed quote.
+    - Example A (concrete): A market order trades better than the current best bid or offer.
+    - Example B (contrast): Without negotiation, it trades exactly at the posted best price.
+2. How improvement happens: stepping in front
+    - A trader steps in front and quotes a better price to you.
+    - Why it matters: Stepping in front delivers an execution better than current quotes.
+    - Example A (concrete): Someone bids above the best bid to buy your small sell.
+    - Example B (contrast): Without stepping in front, your sell hits the standing best bid.
+3. When improvement is likely: wide spread and small order
+    - Price improvement often appears when the spread is wide and size small.
+    - Why it matters: Wide room and small risk make improving more attractive to traders.
+    - Example A (concrete): A small market order arrives when quotes are far apart.
+    - Example B (contrast): A large incoming order or narrow spread sees less improvement.
+4. Price improvement lowers liquidity cost
+    - Better execution reduces the cost of liquidity you must pay.
+    - Why it matters: You keep more value when trading immediately with an improved price.
+    - Example A (concrete): Your sell gets improved above the posted bid, reducing your loss.
+    - Example B (contrast): Without improvement, your sell trades at the lower posted bid.
+
+**Definitions (Jargon → Simple)**
+
+|Term|Meaning|Example|
+|----|-------|-------|
+|Market order|Trade now at the best price currently available|“Sell immediately at the market.”|
+|Price improvement|Execution better than the current best bid or offer|“Sell above the posted bid.”|
+|Step in front|Quote a better price than the current best price|“Bid higher than 23.35.”|
+|Spread|Difference between the bid and the offer|“23.45 minus 23.35.”|
+|Liquidity|Ability to trade when you want to trade|“Execute quickly today.”|
+|Cost of liquidity|Value you give up to trade immediately|“Less loss with improvement.”|
+|Specialist|Dealer on the floor trading for own account|“Fills small orders on exchange.”|
+|Exchange regulations|Rules that limit specialist behavior versus public traders|“Cannot buy at public bid.”|
+|Public traders|Non-specialists quoting the market’s public prices|“Buyers at 23.35.”|
+
+**Mini Recap**
+- Price improvement means trading better than the current displayed prices.
+- It often appears with wide spreads and small incoming market orders.
+- Specialists may improve due to regulations, lowering liquidity costs for you.
 
 **4.3.3 Market Impact**
 
