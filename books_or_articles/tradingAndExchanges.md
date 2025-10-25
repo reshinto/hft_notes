@@ -119,11 +119,11 @@
      - Signal words in the text: “same meanings… properties differ”; “continuous trading market”; “call markets.”
 
 10. Scope of this chapter
-	    - Plain meaning: This chapter focuses on orders in continuous trading markets.
-      - Why it matters: It sets the context for the properties discussed here.
-      - Example A (concrete): Assumes orders arrive and trades are arranged continuously.
-      - Example B (contrast): Call market details are examined in a later chapter.
-      - Signal words in the text: “assume… continuous trading market”; “chapter 6.”
+	- Plain meaning: This chapter focuses on orders in continuous trading markets.
+	- Why it matters: It sets the context for the properties discussed here.
+	- Example A (concrete): Assumes orders arrive and trades are arranged continuously.
+	- Example B (contrast): Call market details are examined in a later chapter.
+	- Signal words in the text: “assume… continuous trading market”; “chapter 6.”
 
 **Definitions (Jargon → Simple)**
 
