@@ -502,6 +502,49 @@
 - The futures example shows rising prices required to finish a big buy.
 
 **4.3.4 Execution Price Uncertainty**
+- Market conditions can change quickly between submission and execution.
+- Execution price uncertainty is the risk of worse-than-expected fills.
+- Quote changes during processing can shift your actual execution price.
+- Large orders may require price concessions to complete the trade.
+- Concerned traders may use limit orders to control execution prices.
+
+**Core Ideas with Examples**
+1. Prices depend on current market conditions
+    - Your execution price depends on what the market looks like now. Conditions can change quickly before your order trades.
+    - Why it matters: Changing conditions can make your final price worse than expected.
+    - Example A (concrete): A market order arrives, but quotes move before it executes.
+    - Example B (contrast): A quiet period holds quotes steady, and execution matches expectations.
+2. Execution price uncertainty
+    - There is risk that your fill price will be worse. This risk is called execution price uncertainty.
+    - Why it matters: Uncertainty adds potential cost to using immediate market orders.
+    - Example A (concrete): A trader submits, then the best bid and offer shift unfavorably.
+    - Example B (contrast): A trader submits, and quotes stay unchanged until execution completes.
+3. Sources of uncertainty: quote changes and price concessions
+    - Uncertainty comes from quote changes during processing. It also comes from price concessions needed to fill large orders.
+    - Why it matters: These forces push execution away from the expected price level.
+    - Example A (concrete): Quotes tighten or widen between submission time and final execution.
+    - Example B (contrast): A large order requires moving price levels to attract counterparties.
+4. Using limit orders to manage the risk
+    - Traders worried about this risk may choose limit orders instead. A limit order controls the worst acceptable execution price.
+    - Why it matters: Limits reduce uncertainty by setting a clear price boundary.
+    - Example A (concrete): A trader sets a buy limit that prevents paying above the limit.
+    - Example B (contrast): A market buy accepts whatever price is available when it arrives.
+
+**Definitions (Jargon → Simple)**
+
+|Term|Meaning|Example|
+|----|-------|-------|
+|Market orders|Trade now at the best available price|“Execute immediately at current quotes.”|
+|Market conditions|The current quotes and trading environment|“Prices and sizes right now.”|
+|Execution price uncertainty|Risk your fill is worse than expected|“Final price slips during processing.”|
+|Quote changes|Movement in best bid or best offer while waiting|“Bid drops before execution.”|
+|Price concessions|Moving prices to attract trades, especially for size|“Pay more to finish buying.”|
+|Limit orders|Orders that cap the acceptable execution price|“Buy only up to this price.”|
+
+**Mini Recap**
+- Market order prices depend on rapidly changing conditions in the market.
+- Execution price uncertainty comes from quote changes and concessions for size.
+- Limit orders help control price outcomes when uncertainty is a concern.
 
 #### 4.4 LIMIT ORDERS
 
