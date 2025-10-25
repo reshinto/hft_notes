@@ -446,6 +446,60 @@
 - Specialists may improve due to regulations, lowering liquidity costs for you.
 
 **4.3.3 Market Impact**
+- Large market orders are harder to execute than small ones.
+- Counterparties fear trading against possibly well-informed large traders.
+- To attract trades, large buyers bid up; large sellers offer down.
+- These price concessions create market impact that grows with order size.
+- For large orders, impact is usually the biggest trading cost.
+- Impact depends on liquidity; illiquid markets move more on small orders.
+- Large orders may pay more than half the spread for liquidity.
+
+**Core Ideas with Examples**
+
+1. Large orders are harder to execute
+    - Big trades need willing counterparties, which are hard to find.
+    - Why it matters: Scarcity of counterparts delays fills and worsens execution prices.
+    - Example A (concrete): Traders may not be interested in the specific instrument.
+    - Example B (contrast): Traders may fear the other side is well informed.
+2. Fear of informed trading reduces willingness to trade
+    - Others avoid trading if they suspect you know more.
+    - Why it matters: Suspicion reduces supply of counterparties for large trades.
+    - Example A (concrete): They are afraid to trade with a possibly informed trader.
+    - Example B (contrast): Without that fear, more traders might take the other side.
+3. Price concessions and market impact
+    - Large buyers raise bids; large sellers lower offers to attract trades.
+    - Why it matters: These changes move prices and create market impact costs.
+    - Example A (concrete): A large buyer bids prices up to encourage selling.
+    - Example B (contrast): A large seller offers prices down to encourage buying.
+4. Impact increases with size and dominates large-order costs
+    - Bigger orders move prices more and cost more to complete.
+    - Why it matters: For big orders, impact is usually the most significant cost.
+    - Example A (concrete): Traders who submit large market orders pay heavy impact.
+    - Example B (contrast): They often pay more than half the spread for liquidity.
+5. Impact depends on market liquidity
+    - Illiquid markets move on small orders; liquid markets absorb size.
+    - Why it matters: Liquidity conditions determine feasibility and price movement.
+    - Example A (concrete): In small, illiquid markets, even small orders move prices.
+    - Example B (contrast): In large, liquid markets, million-dollar orders may barely move prices.
+
+**Definitions (Jargon → Simple)**
+
+|Term|Meaning|Example|
+|----|-------|-------|
+|Large market order|A big trade that seeks immediate execution|“Buy 400 contracts now.”|
+|Price concession|Paying more or accepting less to attract trades|“Bid up to draw sellers.”|
+|Market impact (price impact)|Price move caused by executing your order|“Price rises while you buy.”|
+|Liquidity|How easily trades occur without big price moves|“Many active participants.”|
+|Illiquid market|Few participants; prices move on small orders|“Small trade moves quotes.”|
+|Liquid market|Many participants; prices absorb larger orders|“Big trade barely moves.”|
+|Bid/ask spread|Best ask minus best bid|“Ask above bid by some amount.”|
+|Broker|Person executing orders for the trader|“She gives orders to brokers.”|
+|Contract|The unit traded in the futures example|“One futures contract unit.”|
+
+**Mini Recap**
+- Large orders face scarce counterparts and cause market impact through concessions.
+- Impact grows with size and depends strongly on liquidity conditions.
+- The futures example shows rising prices required to finish a big buy.
 
 **4.3.4 Execution Price Uncertainty**
 
