@@ -1,8 +1,9 @@
 # Operating Systems: Three Easy Pieces
 
-## The First Piece: Virtualization - The Art of Illusion
+## Introduction to Operating Systems
+### The First Piece: Virtualization - The Art of Illusion
 
-### What is Virtualization?
+**What is Virtualization?**
 - At its core, the operating system is a resource manager.
 - It is in charge of the computer’s processor (CPU), memory, and disks, and its primary role is to manage these resources efficiently and fairly.
 - The main way the OS achieves this is through virtualization.
@@ -71,9 +72,9 @@ Yet, they run without interfering with one another. How is this possible?
 - It allows programs to run as if they each have their own dedicated computer, which dramatically simplifies the task of programming.
 - While virtualization allows many programs to seem to run at once, managing their interactions when they try to work together introduces a new set of challenges, known as concurrency.
 
-## The Second Piece: Concurrency - The Challenge of Cooperation
+### The Second Piece: Concurrency - The Challenge of Cooperation
 
-### What is Concurrency?
+**What is Concurrency?**
 - Concurrency refers to the host of problems that arise when multiple threads of execution attempt to access and update shared data at the same time.
 - These problems first appeared inside the OS itself, but they are now common in modern multi-threaded applications.
 
@@ -123,8 +124,8 @@ Actual Final Value (from text)
 - This ensures that only one thread can enter a critical section at a time, making the operations within it execute atomically.
 - Just as the OS must manage concurrent access to shared memory, it must also manage long-term access to shared data on storage devices, a concept known as persistence.
 
-## The Third Piece: Persistence - The Memory That Lasts
-### What is Persistence?
+### The Third Piece: Persistence - The Memory That Lasts
+**What is Persistence?**
 - System memory (like DRAM) is volatile; its contents are lost when the power goes out.
 - For data to last, it must be stored on a persistent storage device, such as a hard disk or solid-state drive.
 - The OS is responsible for managing these devices and providing a way for programs to store data for the long term.
@@ -155,10 +156,107 @@ close(fd);
 - It provides a simple, standard library of calls that allows programmers to save data for the long-term without having to worry about the messy, complex details of hardware interfaces or crash recovery protocols.
 - By managing virtualization, concurrency, and persistence, the operating system provides the foundational illusions that make modern computing possible.
 
-## Conclusion: The Three Pieces Together
+### Conclusion: The Three Pieces Together
 1. Virtualization transforms physical hardware into more useful virtual resources, creating the illusion of a nearly infinite number of processors and private memory spaces.
 2. Concurrency control provides the necessary tools, like locks, to manage the chaos of parallel execution and ensure correct operation on shared resources.
 3. Persistence provides the abstractions of the file system, offering a simple and reliable way to store data for the long term.
 - These three pieces form the conceptual core of what an operating system is and does.
 - Understanding them provides a foundational and powerful way to reason about complex systems.
 - They are the mechanisms that make our powerful computers usable.
+
+## The Abstraction: The Process
+### Overview
+1. The Grand Illusion
+    - Core problem OS solves: Make one CPU feel like many things run at once.
+    - Why it seems impossible: Music, browser tabs, chat apps all "together."
+    - Key insight: The OS uses the abstraction of a process.
+      - The Process
+        - A running program
+        - The OS creates this abstraction to manage everything a program is doing
+        - Analogy: A process is a cook following a recipe.
+          - The OS is the head chef telling each cook when to work.
+    - A program is passive: a file of instructions on disk (like a recipe book on a shelf).
+    - A process is active: the program running with state and resources (like a chef cooking from the book).
+    - Multiple processes from one program: Two chefs can cook the same recipe; two independent browser windows are two processes.
+    - Sandbox / private universe: Each process gets its own “virtual CPU” and private space so they don’t step on each other.
+    - Two superpowers of this abstraction:
+    - Resource sharing: Fair turns with the single CPU.
+    - Isolation: One app crashing doesn’t take down the whole machine.
+    - Kitchen analogy: One cutting board (CPU), many cooks (processes), one head chef (OS) fairly coordinates turns so work gets done without chaos.
+    - Set-up for next topics: Fair sharing and scheduling are the next pieces.
+    - |Program|Process|
+      |-------|-------|
+      |A passive entity|An active entity|
+      |A file on disk|A program in execution|
+      |Lifeless instructions|Has state: memory, etc.|
+2. A process’s Life
+    - Life cycle is structured, not random. Five main states:
+      - `New`: OS is setting the process up.
+      - `Ready`: Prepared to run, waiting its turn (sprinter in the blocks).
+      - `Running`: Currently using the CPU.
+      - `Waiting`: Blocked on slow operations (e.g., disk I/O), so it doesn’t hog the CPU.
+      - `Terminated`: Finished; OS cleans up its resources.
+    - State “dance” example (email app):
+      - Writing an email, the email app is in the `Running` state.
+      - Attach a large file (slow disk read)
+        - the OS is smart by moving the email to the `Waiting` state.
+      - While waiting, another process (e.g., music player) runs.
+      - Once data is ready, email app returns to `Ready` state, then gets scheduled to `Running` state again.
+      - Result: Continuous, fast transitions make the computer feel responsive.
+3. The OS’s Rolodex
+    - How the OS keeps track: A Process Control Block (PCB) per process.
+      - Think of it as a high-fidelity bookmark:
+        - if you're reading a book and someone interrupts you, you put a bookmark in.
+      - Saves the exact instruction position (program counter).
+      - Captures CPU registers (“scratch pad notes”).
+      - Stores unique ID and memory information (and other essentials).
+    - Context switch (the sleight of hand):
+      - OS saves current process state into its PCB.
+      - OS loads the next process’s PCB and resumes it exactly where it left off.
+      - This is the `trick` behind multitasking.
+    - Speed and cost:
+      - Context switches can be a few microseconds.
+      - A blink is ~100,000 microseconds; thousands of switches can occur in one blink.
+      - Not free: There’s overhead; small but real, and sometimes critical.
+4. Juggling for fairness
+    - The scheduler, a component of the OS, decides who runs next
+    - Can think of the OS is a super strict but fair parent
+    - Main technique: Time sharing with fixed time slices (quanta).
+    - Example: “Process A, you get 10 ms, go.”
+      - When Time’s up → context switch → “Process B, you’re up.”
+    - Fast repetition creates the illusion of parallelism on one CPU.
+    - Classic trade-off (responsiveness vs throughput):
+      - Short time slices: System feels very responsive; more context-switch overhead.
+      - Long time slices: Higher overall work done (throughput); system may feel sluggish.
+      - OS design balancing act: Pick time slices to feel fast and accomplish a lot over time.
+5. From Code to career
+    - Why developers should care:
+      - “It works on my machine” often comes from differences in process state:
+        - Different memory contents, environment variables, open files, etc.
+      - Thinking of a process as a self-contained universe clarifies debugging.
+    - Debugging with process states:
+      - App “hangs” — is it Waiting (I/O or network blocked)?
+      - Or Ready but starved for CPU time?
+      - This mindset turns you into a performance detective rather than guessing.
+    - Helpful tools (examples):
+      - Activity Monitor on macOS.
+      - strace on Linux.
+      - These let you “look inside” a process’s world to see what it’s doing.
+6. The nanosecond game
+    |Source of Delay|Typical Cost|
+    |---------------|------------|
+    |User Computation|Varies|
+    |Kernel System Call|`~0.5µs`|
+    |Context Switch|`~5µs`|
+    |Disk I/O Wait|`>1000µs`|
+    - Context where the stakes are extreme: High-Frequency Trading (HFT).
+    - Nanoseconds matter.
+    - A ~5-microsecond context switch is not “tiny” here; it’s unacceptable jitter.
+    - Unpredictable delays can cost millions.
+    - How they respond:
+      - Minimize Syscalls: avoid kernel calls on critical paths
+        - Avoid OS help: Write code that rarely needs the OS, because system calls and switches add delay.
+      - Avoid Switches: use CPU pinning to prevent interruptions
+        - CPU pinning: Bind a critical process to a specific CPU core; tell the OS not to move it.
+      - Isolate Processes: run risk-management code separately.
+      - Manage Resources: pre-configure file and memory limits.
