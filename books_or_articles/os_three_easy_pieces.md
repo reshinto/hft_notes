@@ -167,96 +167,166 @@ close(fd);
 ## The Abstraction: The Process
 ### Overview
 1. The Grand Illusion
-    - Core problem OS solves: Make one CPU feel like many things run at once.
-    - Why it seems impossible: Music, browser tabs, chat apps all "together."
-    - Key insight: The OS uses the abstraction of a process.
-      - The Process
-        - A running program
-        - The OS creates this abstraction to manage everything a program is doing
-        - Analogy: A process is a cook following a recipe.
-          - The OS is the head chef telling each cook when to work.
-    - A program is passive: a file of instructions on disk (like a recipe book on a shelf).
-    - A process is active: the program running with state and resources (like a chef cooking from the book).
-    - Multiple processes from one program: Two chefs can cook the same recipe; two independent browser windows are two processes.
-    - Sandbox / private universe: Each process gets its own “virtual CPU” and private space so they don’t step on each other.
-    - Two superpowers of this abstraction:
-    - Resource sharing: Fair turns with the single CPU.
-    - Isolation: One app crashing doesn’t take down the whole machine.
-    - Kitchen analogy: One cutting board (CPU), many cooks (processes), one head chef (OS) fairly coordinates turns so work gets done without chaos.
-    - Set-up for next topics: Fair sharing and scheduling are the next pieces.
+    - **Problem OS solves:** Make one (or few) CPUs feel like many things run at once.
+    - **Key abstraction:** **Process** = a **running** program with live state and resources.
+    - **Program vs process (analogy):**
+      - **Program:** recipe in a book (passive, on disk).
+      - **Process:** a chef actively cooking (active, in memory).
+      - Many chefs can cook the **same** recipe → many processes from one program.
+    - **Two superpowers:**
+      - **Time sharing (CPU virtualization):** take fast turns on the CPU to create the *appearance* of parallelism.
+      - **Isolation (protection):** each process has a private address space; one crash doesn’t sink the system.
+    - **Modes & safety:** **User mode** (apps) vs **Kernel mode** (OS). Sensitive actions require **system calls** that trap into the kernel.
+    - **Kitchen analogy:** One cutting board (CPU), many cooks (processes), the head chef (OS) assigns turns and enforces boundaries.
+    - **Layman recap:** A process is a program “brought to life.” The OS lets many live programs take turns on the CPU and keeps them from interfering.
+    - **ELI5:** The rules of tic-tac-toe are the program; each separate game you play is a process.
     - |Program|Process|
       |-------|-------|
       |A passive entity|An active entity|
       |A file on disk|A program in execution|
       |Lifeless instructions|Has state: memory, etc.|
-2. A process’s Life
-    - Life cycle is structured, not random. Five main states:
-      - `New`: OS is setting the process up.
-      - `Ready`: Prepared to run, waiting its turn (sprinter in the blocks).
-      - `Running`: Currently using the CPU.
-      - `Waiting`: Blocked on slow operations (e.g., disk I/O), so it doesn’t hog the CPU.
-      - `Terminated`: Finished; OS cleans up its resources.
-    - State “dance” example (email app):
-      - Writing an email, the email app is in the `Running` state.
-      - Attach a large file (slow disk read)
-        - the OS is smart by moving the email to the `Waiting` state.
-      - While waiting, another process (e.g., music player) runs.
-      - Once data is ready, email app returns to `Ready` state, then gets scheduled to `Running` state again.
-      - Result: Continuous, fast transitions make the computer feel responsive.
-3. The OS’s Rolodex
-    - How the OS keeps track: A Process Control Block (PCB) per process.
-      - Think of it as a high-fidelity bookmark:
-        - if you're reading a book and someone interrupts you, you put a bookmark in.
-      - Saves the exact instruction position (program counter).
-      - Captures CPU registers (“scratch pad notes”).
-      - Stores unique ID and memory information (and other essentials).
-    - Context switch (the sleight of hand):
-      - OS saves current process state into its PCB.
-      - OS loads the next process’s PCB and resumes it exactly where it left off.
-      - This is the `trick` behind multitasking.
-    - Speed and cost:
-      - Context switches can be a few microseconds.
-      - A blink is ~100,000 microseconds; thousands of switches can occur in one blink.
-      - Not free: There’s overhead; small but real, and sometimes critical.
-4. Juggling for fairness
-    - The scheduler, a component of the OS, decides who runs next
-    - Can think of the OS is a super strict but fair parent
-    - Main technique: Time sharing with fixed time slices (quanta).
-    - Example: “Process A, you get 10 ms, go.”
-      - When Time’s up → context switch → “Process B, you’re up.”
-    - Fast repetition creates the illusion of parallelism on one CPU.
-    - Classic trade-off (responsiveness vs throughput):
-      - Short time slices: System feels very responsive; more context-switch overhead.
-      - Long time slices: Higher overall work done (throughput); system may feel sluggish.
-      - OS design balancing act: Pick time slices to feel fast and accomplish a lot over time.
-5. From Code to career
-    - Why developers should care:
-      - “It works on my machine” often comes from differences in process state:
-        - Different memory contents, environment variables, open files, etc.
-      - Thinking of a process as a self-contained universe clarifies debugging.
-    - Debugging with process states:
-      - App “hangs” — is it Waiting (I/O or network blocked)?
-      - Or Ready but starved for CPU time?
-      - This mindset turns you into a performance detective rather than guessing.
-    - Helpful tools (examples):
-      - Activity Monitor on macOS.
-      - strace on Linux.
-      - These let you “look inside” a process’s world to see what it’s doing.
-6. The nanosecond game
-    |Source of Delay|Typical Cost|
-    |---------------|------------|
-    |User Computation|Varies|
-    |Kernel System Call|`~0.5µs`|
-    |Context Switch|`~5µs`|
-    |Disk I/O Wait|`>1000µs`|
-    - Context where the stakes are extreme: High-Frequency Trading (HFT).
-    - Nanoseconds matter.
-    - A ~5-microsecond context switch is not “tiny” here; it’s unacceptable jitter.
-    - Unpredictable delays can cost millions.
-    - How they respond:
-      - Minimize Syscalls: avoid kernel calls on critical paths
-        - Avoid OS help: Write code that rarely needs the OS, because system calls and switches add delay.
-      - Avoid Switches: use CPU pinning to prevent interruptions
-        - CPU pinning: Bind a critical process to a specific CPU core; tell the OS not to move it.
-      - Isolate Processes: run risk-management code separately.
-      - Manage Resources: pre-configure file and memory limits.
+2. What Makes a Process (Machine State)
+    - A process is defined by everything it can read/change while running:
+      - **Memory (address space):** code, static data, heap, stack.
+      - **CPU state:** general registers, flags, **program counter (PC)**, stack pointer.
+      - **I/O state:** open files/sockets (e.g., stdin/stdout/stderr).
+      - **Identity:** PID, parent PID, credentials.    
+    - **Virtual memory & isolation (unique point):**
+      - Each process sees its own **virtual** addresses (e.g., `0x200000`).
+      - The OS/MMU maps those to **different physical** RAM for each process.
+      - Same instruction in two processes can touch different physical memory safely.
+    - **Layman recap:** Every chef has private ingredients and tools; the OS maps each chef’s counter to a different physical spot in the kitchen.
+    - **ELI5:** Your toy box looks the same to you as your friend’s does to them, but the toys are in different rooms.
+3. Lifecycle & States (State Machine)
+    - Core states (simple model):
+      - **Running:** executing on a CPU.
+      - **Ready:** can run, waiting its turn (in the ready queue).
+      - **Blocked/Waiting:** can’t run until an external event completes (e.g., I/O).
+    - Extended states:
+      - **New:** being created and set up.
+      - **Terminated:** finished; OS is cleaning up.
+    - **Typical transitions:**
+      - Ready → **Running** (scheduler picks it).
+      - Running → **Ready** (time slice expired; **preemption**).
+      - Running → **Blocked** (e.g., I/O request).
+      - Blocked → **Ready** (I/O completes; interrupt wakes it).
+    - **Layman recap:** Cooking now (Running), waiting for stove (Ready), waiting for oven timer (Blocked).
+    - **ELI5:** In a checkout line: your turn (Running), waiting in line (Ready), waiting for something else first (Blocked).
+4. The PCB & Context Switch (The Sleight of Hand)
+    - **PCB (Process Control Block):** the OS’s “passport/save file” for a process.
+      - Fields include **PID**, **state**, **register snapshot** (PC, SP, GP regs), **memory map/page tables**, **open files**, **priority/scheduling data**, **parent**, and **kernel stack pointer**.
+      - **Kernel stack (unique point):** Separate protected stack used **only** while in kernel mode (system calls/interrupts) to preserve kernel integrity.
+    - **Context switch (mechanism):**
+      1. OS regains control (timer interrupt or system call).
+      2. Saves current registers to PCB(A).
+      3. Chooses next process.
+      4. Restores registers from PCB(B).
+      5. Returns to user mode; B continues.
+    
+    - **Cost model already in your notes (illustrative):**
+      - **System call:** ~**0.5 µs**.
+      - **Context switch:** ~**5 µs**.
+      - **Disk I/O wait:** >**1000 µs**.
+    - **Hidden dominant cost:** **Cache pollution/thrashing.**
+      - Switching to B fills L1 with B’s data/code, evicting A’s “hot” lines.
+      - When switching back, A’s L1 is cold; refills from L2/L3/DRAM cause unpredictable latency.
+    - **Layman recap:** A pit stop: time is spent swapping drivers and their seat setup; afterward, the new car’s quick-access memory isn’t warm yet.
+    - **ELI5:** When a new kid uses the computer, your apps close and theirs open; when you come back, yours must reload.
+5. Scheduling & Fairness
+    - **Preemptive multitasking** (not cooperative): hardware **timer** fires every few ms; OS can forcibly preempt any process to ensure fairness.
+    - **Round-robin:** ready queue + fixed **time slice/quantum**.
+    - **Trade-off:** **Short quantum →** snappy feel but more switching overhead; **Long quantum →** better throughput but laggier feel.
+    - **Tiny numeric example (from notes):**
+      - If switch cost is “1 unit,” a 10-unit quantum wastes ~**9%** on switching; a 100-unit quantum wastes **<1%** but feels less responsive.
+    - **Layman recap:** Like sharing a toy. Short turns = everyone tries sooner but you waste time passing the toy; long turns = more play per child, longer waits.
+    - **ELI5:** A teacher calls on students one at a time for a fixed time.
+
+6. Interleaving CPU & I/O (Worked Example)
+    - **A (I/O-bound):** 10 ms CPU, then 10 ms disk I/O, repeat.
+    - **B (CPU-bound):** 50 ms straight CPU.
+    - **Naïve:** Run A alone → CPU idle during A’s I/O.
+    - **Smart:** When A blocks for I/O, run B → **overlap** B’s compute with A’s wait.
+    - Result: Higher utilization, shorter total finish time.
+    - **Layman recap:** While pasta water boils (A waiting), chop veggies (B compute).
+    - **ELI5:** While you wait for a download, play a game.
+7. Core System Calls (Process Management)
+    - **`fork()`**: Clone current process to create a child.  
+      - Parent gets child **PID**; child gets **0**.
+    - **`exec()`**: Replace current process image with a new program (same PID; never returns on success).
+    - **`wait()`**: Parent waits for child to terminate and collects exit status.  
+      - **Zombie**: child exited but parent hasn’t `wait()`ed yet; PCB persists with status until reaped.
+    - **`exit()`**: Process terminates itself.
+    - **Layman recap:** `fork` makes a twin; `exec` swaps your body for a new one; `wait` is a parent waiting for a child to finish.
+    - **ELI5:** Copy yourself, put a different costume on, and your parent waits for you to come home.
+8. Practical Extensions for Software Engineers
+    - **Debugging “works on my machine”:** often **process state** differences:
+      - Env vars, permissions, library versions, open files, **ulimit**s.
+    - **Reliability via isolation:**
+      - Split components into separate processes for **crash containment** and **graceful degradation**.
+    - **Performance sensitivities:**
+      - **Context switches:** too many processes/threads → overhead + cache thrash.
+      - **Syscalls:** each is a kernel trap; batch I/O, avoid hot-path syscalls.
+      - **Blocking I/O:** use threads, **async/non-blocking I/O**, or dedicated I/O processes.
+    - **Concurrency models (design choice):**
+      - **Multi-process:** strong isolation, higher memory/IPC cost.
+      - **Multi-thread:** easy sharing, needs careful synchronization (locks).
+      - **Async I/O/event loop:** great for I/O-bound single-threaded servers, but can get complex.
+    - **Security & least privilege:**
+      - Run as unprivileged users; apply resource limits to prevent runaway resource use.
+    - **Tools (from notes):**
+      - **Linux/macOS:** `strace` / `dtruss` for syscall traces.
+      - **System monitors:** `top`, `htop`, Activity Monitor/Task Manager (states, CPU, memory, context-switch rates).
+      - **Profilers:** identify hot paths & syscall hotspots.
+    - **Quick checklist when an app stalls:**
+      1. **State:** Running/Ready/Blocked/Zombie?
+      2. **Blocked on I/O?** Check with `strace/dtruss`.
+      3. **CPU-starved?** Competing priorities/ready queue congestion?
+      4. **Memory thrash?** Page faults, excessive RSS growth?
+      5. **Deadlock (threads)?** Lock waits?
+      6. **Resource limits?** `ulimit`, file descriptors, mem caps.
+9. Why This Matters for Quant Devs / HFT (Low-Latency)
+    - **Goal:** ultra-low, **predictable** latency; **jitter** kills strategies.
+    - **OS-induced unpredictability:**
+      - **Scheduling latency:** preemption/migration at bad moments.
+      - **Context switch cache effects:** cold L1 → ns–µs penalties.
+    - **Typical mitigations (from notes):**
+      1. **No blocking I/O** on hot path (async or offload).
+      2. **Minimize syscalls** (kernel bypass: DPDK/Onload, mmap, batched I/O).
+      3. **CPU pinning/affinity:** keep the critical process on one core; avoid migrations and keep caches hot.
+      4. **Core isolation:** keep other tasks/interrupts off the dedicated core (e.g., isolcpus, tickless/nohz full).
+      5. **NUMA awareness:** colocate CPU, memory, NIC.
+      6. **Process isolation for risk:** separate feed/strategy/execution/risk processes; fast restarts; strict resource limits.
+    - **Conceptual latency budget (illustrative from notes):**
+      - **User compute:** target sub-µs; optimize code paths.
+      - **Kernel time (syscalls):** aim **0** on hot path (bypass).
+      - **Context switches:** aim **0** on hot path (pin & isolate).
+      - **I/O waits:** aim **0** on hot path (async).
+    - **Layman recap:** Keep the trader’s critical brain on one seat, don’t make it stand up, don’t make it ask the OS for favors, and don’t let anyone else bump its elbow.
+    - **ELI5:** Give one kid the desk, stop other kids from poking him, and don’t make him go ask the teacher during the test.
+    - |Source of Delay|Typical Cost|
+      |---------------|------------|
+      |User Computation|Varies|
+      |Kernel System Call|`~0.5µs`|
+      |Context Switch|`~5µs`|
+      |Disk I/O Wait|`>1000µs`|
+10. Historical Context & Policy
+    - **Why processes were invented:** keep the expensive CPU busy while slow I/O happens → **multiprogramming** and **time sharing.**
+    - **Cooperative → preemptive:** from “programs politely yield” to “OS forces fairness with timer interrupts.”
+11. Open Questions / Future Directions
+    - The **cache-pollution** cost of context switching is a fundamental bottleneck.
+    - Could hardware evolve to:
+      - Partition caches per process/core?
+      - Preserve more state across switches?
+      - Offload more virtualization to hardware?
+    - Aim: **strong isolation** *without* steep switching penalties.
+12. One-Page Recap
+    - **Process:** running program with private memory and CPU state.
+    - **Illusion:** time sharing makes one CPU look like many.
+    - **Safety:** isolation via virtual memory + user/kernel modes.
+    - **Mechanics:** PCB + context switch (fast, but cache-expensive).
+    - **Scheduling:** preemptive, quantum trade-off: responsiveness vs throughput.
+    - **I/O overlap:** run CPU-bound work while another waits on I/O.
+    - **Engineer’s toolkit:** avoid hot-path syscalls, use async I/O, inspect with `strace`/`top`, enforce limits.
+    - **HFT playbook:** pin, isolate, bypass kernel, be NUMA-aware, forbid blocking, monitor jitter.
+
+
