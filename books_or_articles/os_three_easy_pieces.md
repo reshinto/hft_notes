@@ -99,7 +99,7 @@ Program -> OS -> [ Disk ]   (Data is safe even if power goes out)
 - Layman: A file is a container on your disk for storing information, like a document, a picture, or a program.
   - The OS provides a way to create, read, write, and delete them.
 - ELI5: A file is a named box where you keep your digital stuff.
-- Example/Analogy: A program can create a file named /tmp/file and write "hello world" into it using the open(), write(), and close() system calls.
+- Example/Analogy: A program can create a file named /tmp/file and write "hello world" into it using the `open()`, `write()`, and `close()` system calls.
 
 #### Protection
 - Technical: Protection is a key principle of OS design, centered on isolating processes from one another and from the OS itself.
@@ -115,7 +115,7 @@ Program -> OS -> [ Disk ]   (Data is safe even if power goes out)
   - An ABI (Application Binary Interface) specifies the low-level details for compiled code, such as calling conventions and system call numbers, ensuring binary compatibility.
 - Layman: An API is like a menu at a restaurant; it tells you what you can order (what functions you can call). The ABI is like the kitchen's internal rules for how the cooks should prepare the order (how the compiled code actually makes the function call happen).
 - ELI5: The API is the list of rules for programmers; the ABI is the list of rules for the computer.
-- Example/Analogy: The POSIX standard defines an API for operating systems. You can write C code that calls fork() on both Linux and macOS because they follow this API. The code compiles and runs because the compiler and OS on each system agree on the ABI.
+- Example/Analogy: The POSIX standard defines an API for operating systems. You can write C code that calls `fork()` on both Linux and macOS because they follow this API. The code compiles and runs because the compiler and OS on each system agree on the ABI.
 
 #### Kernel Mode vs. User Mode
 - Technical: User mode is a restricted processor mode in which applications run; certain privileged instructions, like I/O requests, are forbidden.
@@ -228,7 +228,7 @@ Ready Queue: [ Process C ] - [ Process A ] - [ Process D ]
 - **Cache Effects**: Modern CPUs rely on caches for fast memory access.
   - When a context switch occurs, the new process will likely find that the data it needs is not in the CPU cache.
   - It must then fetch data from the much slower main memory, a phenomenon known as a "cold cache," which hurts initial performance.
-- **Blocking vs. Non-Blocking I/O**: A "blocking" system call, such as a standard read() from a network socket, will cause your entire process to freeze until the operation completes.
+- **Blocking vs. Non-Blocking I/O**: A "blocking" system call, such as a standard `read()` from a network socket, will cause your entire process to freeze until the operation completes.
   - In applications that need to remain responsive (like a UI or a server handling multiple clients), using non-blocking I/O techniques is essential to allow the program to do other work while waiting.
 
 #### Safety
@@ -521,7 +521,7 @@ int main(int argc, char *argv[]) {
   - An engineer must assume the scheduler is an adversary that will choose the least optimal execution order.
 
 #### `wait()`: Synchronizing with Children
-- The `wait()` system call directly addresses the non-determinism introduced by fork() and is essential for proper resource management.
+- The `wait()` system call directly addresses the non-determinism introduced by `fork()` and is essential for proper resource management.
   - Its primary function is to cause a parent process to pause its own execution until one of its children has terminated.
 - Calling `wait()` is often referred to as “reaping” a child.
   - This action is critically important for two reasons:
@@ -605,9 +605,9 @@ int main(int argc, char *argv[]) {
 
 #### Executing a Simple Command
 - When a user types a command like ls and presses Enter, the shell performs a straightforward sequence of operations:
-	1.	Fork: The shell calls fork() to create a new child process.
-	2.	Exec: The child process calls a variant of exec() (like execvp(“ls”, …)), loading and running the ls program.
-	3.	Wait: The parent shell calls wait(), pausing until the ls command is finished. Once wait() returns, the shell prints a new prompt.
+	1.	Fork: The shell calls `fork()` to create a new child process.
+	2.	Exec: The child process calls a variant of `exec()` (like `execvp(“ls”, …)`), loading and running the ls program.
+	3.	Wait: The parent shell calls wait(), pausing until the ls command is finished. Once `wait()` returns, the shell prints a new prompt.
 
 #### I/O Redirection
 - The ability to manipulate the child’s environment between `fork()` and `exec()` is the key to I/O redirection. Consider `wc p3.c > newfile.txt`, which redirects the output of wc to a file.
@@ -663,7 +663,7 @@ int main(int argc, char *argv[]) {
 
 #### The Cost of Creation
 - Every system call has a cost, but process creation and context switching are among the most expensive operations in the kernel’s arsenal.
-  - **Fork Overhead**: The fork() system call requires creating a copy of the parent’s address space.
+  - **Fork Overhead**: The `fork()` system call requires creating a copy of the parent’s address space.
     - For large processes with gigabytes of memory, this is a profoundly expensive operation, consuming significant time and memory.
     - This cost is the primary reason why high-performance applications avoid `fork()` during latency-sensitive operations.
 	- **Context Switch Overhead**: Switching the CPU from one process to another is not an instantaneous operation.
@@ -689,7 +689,7 @@ int main(int argc, char *argv[]) {
 	- **Creating Daemons and Services**: Server processes and system daemons often fork child processes to handle incoming requests or perform isolated tasks.
     - This isolates the work, improving reliability; a crash in a child handler won’t bring down the main server.
 	- **Supervisors and Process Management**: Process supervisor systems like systemd or supervisord are built entirely around the process API.
-    - They use `fork()` and `exec()` to launch services and rely on PIDs and wait() to monitor their health and restart them upon failure.
+    - They use `fork()` and `exec()` to launch services and rely on PIDs and `wait()` to monitor their health and restart them upon failure.
 	- **Avoiding Zombie Processes**: Forgetting to call `wait()` in a long-running application that creates many children is a classic bug that leads to resource leaks.
     - This knowledge is crucial for writing robust server-side software.
 
