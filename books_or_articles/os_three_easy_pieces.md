@@ -1263,3 +1263,194 @@ int main(int argc, char *argv[]) {
   - For the generalist, MLFQ's principles teach us how to write "polite" applications that cooperate with the OS to achieve good performance.
   - For the specialist, these same principles reveal the OS's inherent non-determinism, teaching us what must be bypassed and controlled—using tools like SCHED_FIFO and isolcpus—to achieve the unwavering predictability that low-latency systems demand.
   - MLFQ, therefore, remains an essential concept for any engineer who truly wants to understand and control system performance.
+
+## 9: Scheduling: Proportional Share
+
+### Introduction: Beyond Traditional Scheduling Metrics
+
+#### Setting the Stage: A New Goal for Fairness
+- In our study of operating systems, we have seen schedulers designed with specific, noble goals.
+	- An algorithm like Shortest Job First (SJF) aims to optimize turnaround time, ensuring that jobs, on average, complete as quickly as possible.
+ 	- In contrast, a scheduler like Round Robin prioritizes response time, guaranteeing that interactive users receive prompt feedback from the system.
+  - Each of these schedulers excels at its chosen metric, but often at the expense of others.
+- Proportional-share scheduling introduces a different, more explicit goal: to grant each process a specific, configurable fraction of the CPU over time.
+  - This represents a philosophical shift from the implicit, heuristic-based fairness of schedulers like the Multi-Level Feedback Queue (MLFQ) to a model of explicit, policy-driven resource allocation.
+  - Instead of optimizing for a single system-wide metric, this approach provides a more granular and controllable definition of fairness.
+- This stands in stark contrast to MLFQ, which attempts to deduce the behavior of jobs as they run and adjust priorities accordingly.
+  - Such schedulers are powerful, but they are fundamentally guessing what a process will do next.
+  - Proportional-share schedulers operate from a position of knowledge.
+  - They don't guess; we tell the operating system how important each process is.
+  - This paradigm is invaluable in environments where we have clear priorities and need to enforce them directly.
+- To achieve this goal, we will explore the foundational algorithm that first brought this idea to life: Lottery Scheduling.
+
+### Lottery Scheduling: Fairness Through Randomness
+
+#### The Core Concept: Tickets as CPU Rights
+- Lottery Scheduling is a foundational proportional-share algorithm that achieves fairness through a simple, elegant analogy: a lottery.
+  - The key innovation of this approach is the concept of "tickets," which are used to allocate CPU time.
+- Tickets are abstract tokens that represent a process's share of a system resource, in this case, the CPU.
+  - The more tickets a process possesses, the higher its probability of being selected to run in the next time slice.
+  - The percentage of tickets a process holds corresponds directly to the percentage of the CPU it should receive over time.
+- To illustrate, consider two processes competing for the CPU:
+
+|Process|Tickets|
+|-------|-------|
+|Process A|75|
+|Process B|25|
+
+- With a total of 100 tickets in the system, the scheduler must ensure that Process A receives the CPU 75% of the time and Process B 25% of the time.
+  - Process A has 75 out of 100 total tickets, giving it a 75/100 = 75% chance of winning.
+  - Process B has a 25/100 = 25% chance.
+- The scheduler implements this probability by holding a "lottery" for each time slice, picking a random winning ticket number between 0 and 99.
+  - It then maps this number to the processes based on their ticket counts:
+    - If the winning number is in the range 0–74, Process A is chosen to run.
+    - If the winning number is in the range 75–99, Process B is chosen to run.
+- This mechanism gives Process A a 75% chance of running and Process B a 25% chance in any given timeslice, precisely matching their ticket allocation.
+
+#### Probabilistic Fairness: Short-Term vs. Long-Term Behavior
+- The use of randomness is what makes Lottery Scheduling both simple and unique.
+  - It is probabilistically fair, meaning that it achieves the correct proportions over time, but with no absolute guarantees in the short term.
+- **Short-Term:** In any small window of time, the actual CPU allocation may not perfectly align with the ticket allocation.
+  - A process with fewer tickets might get "lucky" and win several lotteries in a row, while a process with more tickets might experience a brief unlucky streak.
+  - For example, the source text highlights a run of 20 time slices where a process with a 25% share only ran 4 times (20%), slightly below its expected share of 5 runs.
+- **Long-Term:** Over a sufficiently long period with many time slices, the law of large numbers ensures that the CPU allocation will converge to the designated proportions.
+  - The more lotteries held, the more likely the outcomes will reflect the underlying ticket distribution.
+- While the core mechanism is straightforward, it can be extended with more sophisticated operations to handle complex interactions between processes.
+
+#### Advanced Ticket Mechanisms
+- The abstract nature of tickets allows them to be managed dynamically, providing flexible solutions for coordinating cooperating processes.
+  - Two key mechanisms are ticket transfer and ticket inflation.
+    - **Ticket Transfer**
+      - **Definition:** The ability for a process to temporarily hand its tickets over to another process.
+      - **Example:** Consider a client application that sends a request to a database server.
+        - The client must wait for the server to process the request and send a reply.
+        - To expedite this, the client can transfer its tickets to the server process for the duration of the request.
+        - This ensures that the work the server is doing on the client's behalf receives the client's CPU priority, leading to a faster response.
+    - **Ticket Inflation**
+      - **Definition:** The ability of a process to temporarily create more tickets for itself, thereby increasing its share of the CPU.
+        - This mechanism should only be used between mutually trusting processes, as it can be easily abused.
+      - **Example:** In a tightly-coupled, multi-process system, one process might know it is about to enter a critical, time-sensitive phase of computation.
+        - It could inflate its ticket count to guarantee it receives the necessary CPU time, and then deflate its tickets back to normal once the critical work is complete.
+- While Lottery Scheduling offers elegant simplicity through randomness, some systems require more predictable, deterministic fairness.
+  - This need gives rise to its primary alternative: Stride Scheduling.
+
+### Stride Scheduling: A Deterministic Alternative
+
+#### Eliminating Randomness for Predictability
+- Stride Scheduling is a deterministic algorithm designed to achieve proportional-share fairness without the variance inherent in randomness.
+  - For systems where predictable performance and low jitter are paramount, this deterministic approach is a critical alternative to Lottery Scheduling.
+- Instead of a lottery, Stride Scheduling uses a simple counting mechanism based on the following concepts:
+  - **Tickets:** Each job is assigned a number of tickets, just as in Lottery Scheduling, to represent its desired CPU share.
+  - **Stride:** For each job, a stride value is calculated as `Stride = A_Large_Number / Tickets`.
+    - This means a job with more tickets will have a smaller stride.
+    - This inverse relationship is the core of the algorithm's determinism: a smaller stride means the pass value grows more slowly, causing the scheduler to pick that process more frequently to keep its pass value low.
+  - **Pass:** Each job has a pass counter, which tracks its progress through the system.
+    - This value is initialized to 0.
+- The scheduling algorithm is simple and deterministic:
+  1. The scheduler selects the job with the lowest current pass value to run.
+  2. After the job runs for a timeslice, its pass value is incremented by its stride.
+  3. This process is repeated.
+- A job with a small stride (many tickets) will have its pass value advance slowly, causing it to be chosen more frequently.
+  - A job with a large stride (few tickets) will see its pass value increase quickly, causing it to be scheduled less often.
+
+#### Stride Scheduling vs. Lottery Scheduling
+- The choice between Lottery and Stride scheduling involves a fundamental trade-off between simplicity and deterministic precision.
+
+| Feature            | Lottery Scheduling                 | Stride Scheduling                        |
+|-------------------|------------------------------------|------------------------------------------|
+| Mechanism         | Probabilistic (Random Number)       | Deterministic (Pass/Stride Counter)      |
+| Short-Term Fairness | High Variance (can be "unlucky")  | Low Variance (highly predictable)        |
+| New Job Arrival   | Simple (add tickets to total)       | Complex (pass value must be set carefully) |
+
+- Pay close attention to the trade-off when a new process arrives; this is where the theoretical elegance of Lottery scheduling reveals its practical advantage over the stateful nature of Stride.
+  - **Lottery Scheduling** is stateless from a per-process perspective.
+    - To add a new job, the scheduler simply adds its tickets to the total count.
+    - The next lottery will automatically and fairly include the new process.
+  - **Stride Scheduling** maintains a pass value for each process.
+    - When a new job arrives, its pass value must be carefully initialized.
+    - Setting it to 0 would allow it to monopolize the CPU until its pass value "catches up" to the other, more established processes.
+    - The correct approach is to initialize its pass value to the current minimum pass value in the system.
+- In summary, Lottery Scheduling offers excellent simplicity and robustness, while Stride Scheduling provides superior precision at the cost of increased state management complexity.
+
+### Design Choices and Practical Realities
+
+#### Key Trade-offs
+- Implementing a proportional-share system, whether lottery- or stride-based, involves several practical design decisions that significantly impact its behavior and effectiveness.
+  - **Quantum Size:** The length of the time slice, or quantum, presents a classic trade-off.
+    - A very short quantum allows the scheduler's allocations to converge more quickly to the ideal proportions, offering finer-grained fairness.
+    - However, this comes at the cost of higher context-switching overhead.
+    - Conversely, a longer quantum reduces overhead but increases the time window required to achieve the target CPU shares.
+  - **Handling I/O:** Proportional-share schedulers do not inherently manage I/O-bound processes well.
+    - This is not a quirk; it is a fundamental resource management failure.
+    - When a process blocks on an I/O operation, it is not using the CPU and therefore forfeits its share.
+    - The scheduler's primary currency—CPU tickets—becomes irrelevant for that process, leading to an unintended and inefficient distribution of resources.
+    - The Ticket Transfer mechanism is a clever solution to this problem, as it allows a process to convert its CPU rights into I/O priority.
+    - By transferring tickets to a kernel thread doing work on its behalf (e.g., a network driver), an I/O-bound process makes the scheduler's currency relevant again, ensuring related work is prioritized appropriately.
+  - **Ticket Assignment:** The most challenging practical issue is determining how many tickets to assign to any given application.
+    - This remains a difficult, largely unsolved problem.
+    - An administrator must have deep knowledge of the workload to assign tickets effectively.
+    - This complexity is a primary reason why pure proportional-share schedulers are not dominant in general-purpose operating systems, which favor schedulers that adapt automatically.
+
+#### Measuring Fairness
+- The fairness of a proportional-share system can be empirically measured by comparing its goals to its actual performance.
+- The core metric involves comparing the target share (the proportion defined by a process's tickets) to the observed share (the actual CPU time the process received).
+  - This comparison must be performed over a specific time window.
+- It is crucial to evaluate fairness across various window sizes.
+  - For Lottery Scheduling, short-term results can be misleading due to probabilistic variance.
+  - A longer time window will provide a more accurate picture of how well the scheduler is meeting its long-term proportional goals.
+  - For Stride Scheduling, fairness should be near-perfect even over very short windows.
+
+### Why Proportional Share Matters: From Theory to Production
+
+#### For the Modern Software Engineer
+- In environments with many microservices competing for resources, the ideas pioneered by proportional-share scheduling provide the language and mechanisms for control and stability.
+  - **Resource Isolation:** Tickets enforce a hard ceiling on resource consumption, guaranteeing a baseline quality of service for critical components.
+    - For example, a user-facing API server can be given a much larger ticket allocation than a background analytics service.
+    - This ensures the critical service remains responsive under load by preventing the "noisy neighbor" problem, where a lower-priority service consumes an unfair amount of CPU.
+  - **Implementing Budgets:** The concept of tickets maps directly to CPU shares or quotas in modern containerization and orchestration platforms like Docker and Kubernetes cgroups.
+    - This allows engineers to enforce strict resource budgets, ensuring a service cannot exceed its allocation and enabling the implementation of back-pressure or scaling policies when a service hits its limit.
+  - **Managing Expectations:** A clear understanding of short-term versus long-term fairness helps engineers configure effective monitoring and alerting.
+    - A service might briefly dip below its CPU target due to scheduler variance; this is expected behavior, not necessarily an alert-worthy failure.
+    - Knowing this prevents alert fatigue and helps teams focus on genuine performance issues.
+
+#### For the Quant Developer and HFT Engineer
+- In quantitative finance, and particularly in high-frequency trading, scheduler behavior is not a matter of performance—it's a matter of profit and loss.
+  - Nanoseconds of non-determinism, known as jitter, can mean the difference between capturing alpha and suffering a loss.
+  - The concepts from proportional-share scheduling are therefore not theoretical; they are fundamental tools for controlling the latency envelope of a trading system.
+- **Protecting the Hot Path:** An HFT application's core logic—the "hot path" that reacts to market data and places orders—must be shielded from all non-essential OS and application activity.
+  - Assigning this process a near-total majority of tickets (or CFS weights) creates a computational moat, ensuring that scavenger tasks like logging, metrics collection, or even SSH daemons cannot steal cycles at a critical moment.
+  - This isn't about fairness; it's about ruthless prioritization to minimize scheduler-induced jitter on the money-making code path.
+- **Eradicating Variance with Determinism:** For any HFT system, Stride Scheduling is conceptually and practically superior to Lottery Scheduling.
+  - The probabilistic nature of Lottery scheduling, while fair in the long run, introduces unacceptable short-term variance.
+  - A single "unlucky" lottery loss on the hot path at the wrong moment could delay order submission past a price point.
+  - Stride's deterministic, clockwork progression provides the predictable tail latency that is non-negotiable for any time-sensitive sequence, from parsing an inbound FIX message to performing a pre-trade risk check.
+  - In this world, predictable latency is the only acceptable latency.
+- **Compensating for I/O with Priority Donation:** A market data feed handler is I/O-bound by definition—it's perpetually waiting for the next UDP packet.
+  - When it blocks, it is not idle; it is in the most critical wait state of the entire system.
+  - A mechanism like Ticket Transfer is vital here.
+  - By transferring its tickets to the kernel's networking stack or a dedicated packet processing thread, the feed handler ensures that when a packet arrives, it is serviced with the full priority of the trading application itself.
+  - This prevents the OS from deprioritizing packet handling, which would cause the system to fall behind the live market—an unrecoverable failure in HFT.
+- These abstract concepts have found their way into the schedulers that power nearly every modern server, most notably in the Linux kernel.
+
+### Context/Extension: Mapping to the Linux Completely Fair Scheduler (CFS)
+- While pure Lottery or Stride schedulers are not commonly found in today's general-purpose operating systems, their core principles have heavily influenced the design of modern schedulers.
+  - The most prominent example is the Linux Completely Fair Scheduler (CFS), which is the default scheduler in Linux kernels.
+- The parallels are direct and clear:
+  - **Tickets and Weights:** In Linux, the nice value of a process and the cgroup CPU weights are directly analogous to tickets.
+    - These values determine a process's proportional share of the CPU relative to other processes on the system.
+  - **Pass and Virtual Runtime:** The CFS concept of vruntime (virtual runtime) is a direct intellectual descendant of the pass value in Stride Scheduling.
+    - CFS's vruntime is pass made sophisticated: it is not just a counter incremented by a static stride, but a measure of a process's actual runtime, weighted by its priority.
+    - This design achieves proportional sharing with greater precision and adapts to varying CPU loads more gracefully than a simple stride counter.
+    - CFS always runs the task with the lowest vruntime, ensuring deterministic, weighted, proportional-share fairness.
+
+### Conclusion: Key Takeaways
+- Proportional-share scheduling marks a significant shift in the philosophy of CPU scheduling.
+  - Instead of letting the operating system guess at the importance of a process, it provides mechanisms to explicitly define and enforce CPU allocation policies.
+  - This principle of direct control over fairness is its most enduring legacy.
+    1. **Control Over Fairness:** Proportional-share schedulers provide explicit control over CPU allocation via "tickets" or weights.
+        - This allows administrators to declare the relative importance of processes, a stark contrast to schedulers like MLFQ that try to infer process behavior implicitly.
+    2. **Randomness vs. Determinism:** The two primary approaches highlight a fundamental systems trade-off.
+        - Lottery Scheduling uses randomness for simplicity and statelessness, at the cost of short-term variance.
+        - Stride Scheduling uses a deterministic counting mechanism to eliminate this variance, providing predictable performance that is critical for latency-sensitive applications.
+    3. **Real-World Influence:** While not widely deployed in their original forms, the core ideas of proportional share are alive and well.
+        - They form the intellectual foundation of modern schedulers like the Linux CFS, which uses weights (tickets) and virtual runtime (pass values) to manage CPU resources for everything from mobile devices to the world's largest containerized services.
