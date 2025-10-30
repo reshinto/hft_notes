@@ -1454,3 +1454,169 @@ int main(int argc, char *argv[]) {
         - Stride Scheduling uses a deterministic counting mechanism to eliminate this variance, providing predictable performance that is critical for latency-sensitive applications.
     3. **Real-World Influence:** While not widely deployed in their original forms, the core ideas of proportional share are alive and well.
         - They form the intellectual foundation of modern schedulers like the Linux CFS, which uses weights (tickets) and virtual runtime (pass values) to manage CPU resources for everything from mobile devices to the world's largest containerized services.
+
+## 10: An Introduction to Multiprocessor Scheduling
+
+### The New World: From One Core to Many
+
+#### Setting the Stage: Why This Chapter Matters
+- For many years, computers got faster by making a single processor, or CPU, faster.
+	- This trend has stopped.
+  - Making a single CPU faster became too difficult and used too much power.
+  - Instead, computer makers started putting multiple CPUs onto a single chip.
+  - These are called multi-core processors.
+- This fundamental change in hardware creates a new, critical challenge for the operating system (OS).
+  - The OS must now decide how to schedule work not on one processor, but on many.
+  - This task is called multiprocessor scheduling.
+  - Understanding this is essential to understanding modern computer performance.
+
+#### The Core Problem
+- The shift to multiple processors forces us to ask new questions.
+  - The old solutions for a single CPU may not work anymore.
+  - The central problem we will explore is this:
+    - How should the OS schedule jobs on multiple CPUs? What new problems arise? Do the same old techniques work, or are new ideas required?
+    - To answer these questions, we must first understand the hardware reality that makes this problem so different from single-CPU scheduling.
+
+### The Hardware Reality: Cache Is King
+
+#### The Strategic Importance of Caches
+- To understand multiprocessor scheduling, we must first understand how hardware caches work.
+  - The way multiple CPUs interact with their caches is the single biggest difference from single-CPU systems.
+  - This interaction is the key to performance.
+
+#### A Quick Cache Refresher
+- In a single-CPU system, hardware caches are simple and effective.
+- A cache is a small, very fast memory.
+  - It holds copies of popular data that a program is using.
+- Accessing data in the cache is much faster than accessing it from the main memory.
+- Caches work because of a principle called locality.
+  - Programs often access the same data or nearby data repeatedly.
+  - There are two types of locality:
+    - **Temporal Locality:** If a program accesses a piece of data, it is very likely to access it again soon.
+    - **Spatial Locality:** If a program accesses data at address x, it is very likely to access data at addresses near x soon.
+- Because most programs show locality, caches work very well to make them run faster.
+
+#### The Multiprocessor Complication: Cache Coherence
+- With multiple CPUs, caches become more complicated.
+  1. A standard multi-core system has several CPUs.
+      - Each CPU has its own private cache.
+      - All CPUs share the same main memory.
+  2. This setup creates a problem called cache coherence.
+      - This is the challenge of ensuring that all CPUs have a consistent and correct view of data that is shared in main memory.
+  3. Imagine a process is running on CPU 1.
+      - It reads a value D from memory and stores it in its cache.
+      - Then, it updates that value to D' in its cache.
+  4. Later, the OS moves the process to CPU 2.
+      - The process tries to read the value again.
+      - CPU 2 checks its own cache (which is empty) and then gets the value from main memory.
+      - It gets the old, stale value D, not the correct value D'.
+  5. Modern hardware provides solutions to this problem.
+      - These protocols monitor memory accesses and keep the caches coherent.
+  6. This leads to a critical concept for schedulers.
+      - When a process runs on a CPU, it builds up useful state in that CPU's cache.
+  7. A primary goal for a multiprocessor scheduler is to keep a process running on the same CPU.
+      - This allows the process to benefit from the data it has already loaded into that CPU's cache.
+      - Accessing this data is extremely fast, while fetching it from main memory is much, much slower.
+- The following sections will look at two major scheduler designs.
+  - We will evaluate them based on one key question:
+    - How well do they enable processes to benefit from cached data while keeping all CPUs busy?
+
+### Design #1: Single-Queue Multiprocessor Scheduling (SQMS)
+
+#### The Simple Approach
+- The simplest way to schedule on multiple processors is to use just one list, or queue, for all jobs.
+  - This approach, Single-Queue Multiprocessor Scheduling (SQMS), is a straightforward extension of a traditional single-CPU scheduler.
+
+#### Mechanism and Evaluation
+1. **The Mechanism:**
+    - The OS keeps a single, global queue of all jobs that are ready to run.
+    - When a CPU becomes idle, it picks the next available job from this shared queue.
+2. **Evaluation**: This simple design has clear strengths and weaknesses.
+
+**Strengths (Pros)**
+- Simplicity: It is very easy to design and build.
+- Automatic Load Balancing: No CPU is ever idle if there is work to do.
+  - All CPUs pull from the same pool.
+
+**Weaknesses (Cons)**
+- Scalability Bottleneck: The single queue is a shared resource.
+  - It must be protected by a lock.
+  - As you add more CPUs, they all fight for this one lock, causing performance to drop severely.
+- Poor Cache Performance: A process can be scheduled on CPU 1, then CPU 3, then CPU 2.
+  - It rarely stays on one CPU long enough to benefit from the data already in that CPU's cache.
+
+- From a performance engineering perspective, a single global lock is a critical flaw.
+  - It guarantees that system throughput cannot scale linearly with the number of processors.
+
+#### The Problem with a Single Lock
+- The scalability bottleneck is the most severe weakness of SQMS.
+  - As a system grows to include more and more CPUs, the single lock on the queue becomes a major point of contention.
+- Each CPU that wants to pick a new job must first acquire the lock.
+  - This means that even if many CPUs are idle, only one can access the queue at a time.
+  - The others must wait.
+  - This waiting slows down the entire system.
+  - The more CPUs you add, the more time they spend waiting for the lock, and the less work they get done.
+  - For systems that need to scale to many cores, this design is simply not viable.
+
+### Design #2: Multi-Queue Multiprocessor Scheduling (MQMS)
+
+#### A More Scalable Approach
+- To overcome the problems of the single-queue design, modern systems use Multi-Queue Multiprocessor Scheduling (MQMS).
+  - In this design, each processor has its own private queue of jobs.
+
+#### Mechanism and Evaluation
+1. **The Mechanism:**
+    - Each CPU has its own scheduling queue.
+    - The OS assigns each process to a specific queue, and by default, it runs only on that CPU.
+2. **Evaluation**: This design is the foundation of modern schedulers.
+
+**Strengths (Pros)**
+- Scalable: There is no single, shared queue.
+  - This means there is no global lock for all CPUs to fight over.
+- Good Cache Performance: A process stays on the same CPU by default.
+  - This allows it to benefit from the data it has loaded into that CPU's cache.
+
+**Weaknesses (Cons)**
+- Load Imbalance: This design introduces a new and significant problem.
+  - One CPU's queue can be full while another CPU's queue is empty, leaving it idle.
+
+- Unlike the single-queue approach, which constantly moves processes, the multi-queue design inherently keeps a process on a single CPU.
+  - This maximizes the performance benefit of having data already in the cache.
+
+#### The New Trade-Off
+- MQMS is the dominant design in modern operating systems.
+  - It prioritizes scalability and makes it easier for processes to benefit from cached data.
+- While this design eliminates the central lock and improves scalability, it introduces a new performance challenge: potential resource wastage due to load imbalance.
+  - The OS now has to make sure that work is spread evenly across all the processor queues.
+  - If it doesn't, some CPUs will be overloaded while others sit idle.
+  - The technique used to solve this problem is called migration.
+
+### Solving Imbalance: Process Migration
+
+#### The Need to Rebalance
+- With a private queue for each CPU, the OS must have a way to move jobs.
+  - It needs to move jobs from a very busy CPU to a less-busy one.
+  - This prevents the problem of load imbalance.
+
+#### The Core Technique: Moving Work
+- A common technique is for a CPU with a light workload to periodically check the queues of other CPUs.
+- If another CPU's queue is significantly longer, the less-busy CPU can "pull" one or more jobs from it.
+- These jobs are moved to its own queue for processing.
+- This rebalances the load across the system, ensuring all CPUs stay busy.
+- This technique effectively solves the load imbalance problem.
+  - However, the act of migrating a process has a performance cost.
+  - Moving a process to a new CPU means it loses the benefit of the data it had in its previous cache.
+  - Therefore, the scheduler must be intelligent about when and how often it moves processes.
+
+### Summary: The Core Trade-Off
+- The fundamental principles of multiprocessor scheduling can be summarized by a key trade-off.
+  1. **Keeping a Process on One CPU is Key:** Keeping a process on the same CPU is critical for performance.
+      - It allows the process to reuse data already present in that CPU's cache, making memory access much faster.
+  2. **Per-CPU Queues (MQMS) Achieve This:** The dominant scheduler design gives each CPU its own private queue.
+      - This approach is scalable and naturally helps processes benefit from cached data.
+  3. **The Price is Load Imbalance:** Using per-CPU queues can lead to situations where some CPUs are overloaded while others are idle.
+      - This wastes processing power.
+  4. **The Central Tension:** The core challenge of a modern multiprocessor scheduler is balancing two goals:
+      1. keeping processes on the same CPU to leverage cached data for high performance
+      2. moving processes between CPUs to ensure all processors are busy (load balancing).
+      - Schedulers manage this trade-off using migration, but must do so carefully to avoid the performance cost of moving a process away from its cached data.
