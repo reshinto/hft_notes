@@ -3014,3 +3014,163 @@ for (i = 0; i < 10; i++) {
 - For you, the software engineer, the TLB is an invisible but vital partner.  
 - You don't manage it directly, but your code's structure, data layout, and memory access patterns are the ultimate arbiters of its effectiveness.  
 - Understanding how the TLB works—and how your code can work with it—is a crucial step on the path to mastering system performance.
+
+## 20: Paging: Smaller Tables
+- While paging is a powerful solution for memory virtualization, its simplest implementation—the linear page table—introduces a significant new problem: it consumes an enormous amount of memory.
+  - For every process, the OS must dedicate a large block of memory just to track its address translations.
+  - This overhead steals precious memory from the applications that need it.
+- The core goal of this lesson is to explore the advanced paging techniques that operating systems use to make page tables smaller and more efficient.
+  - We will see how a simple concept can be refined to overcome its initial, costly limitations by embracing a classic system design trade-off: sacrificing a little bit of time to save a great deal of space.
+- We will investigate two primary solutions. The first is a logical but ultimately limited hybrid of segmentation and paging.
+- The second, and more important, is the multi-level page table—a powerful, tree-based approach that has become the standard in virtually all modern systems.
+
+### Why We Need Smaller Page Tables: The Cost of Linear Paging
+- In an operating system, memory efficiency is a strategic imperative.
+  - Every byte the OS uses for its own internal data structures is a byte that cannot be used by your applications.
+  - Page tables are one of the most significant OS data structures, and if managed naively, their cost can become prohibitive.
+
+**Example: 32-bit, linear page table (per process)**
+- **Virtual Address Space:** 32-bit ⇒ `2^32` bytes (4 GB)  
+- **Page Size:** 4 KB ⇒ `2^12` bytes  
+- **Number of Virtual Pages:** `2^32 / 2^12 = 2^20` ≈ **1,048,576** pages  
+- **Page Table Entry (PTE) Size:** **4 bytes**  
+- **Total Page Table Size:** `2^20 × 4` bytes = **4 MB**
+- With 100 active processes, total page-table memory = **100 × 4 MB = 400 MB**.
+- This isn't just a historical footnote for 32-bit systems, either.
+  - The principle is identical on 64-bit systems, but the numbers become astronomical.
+  - A naive linear page table for a 48-bit virtual address space would require petabytes of memory per process.
+  - This is why multi-level tables aren't just an optimization; they are an absolute necessity.
+
+**Key inefficiency: sparsity.**  
+- Most programs use a sparse address space (small code, small heap, small stack, with a vast unused gap between heap and stack).
+- A linear page table allocates entries for the entire range, including unused portions.
+
+**Goal:**
+- allocate page-table space proportional to the *used* portion of the virtual address space.
+
+### A First Attempt: Combining Paging and Segmentation
+- A logical first step to reduce page table size is to combine segmentation and paging.
+  - The goal of this hybrid is to use segmentation's coarse-grained management to eliminate the page table entries for the large, unused gap between the heap and the stack.
+
+**Redefining segment registers:**
+- **Base Register:** physical address of the **page table for that segment**  
+- **Bounds Register:** maximum valid **page number** for that segment (size of its page table)
+
+**Example flow (top two VA bits select segment; e.g., `01` code, `10` heap, `11` stack):**
+1. Extract **segment number (SN)** from top bits.  
+2. Use **SN** to select the segment’s base/bounds pair.  
+3. Extract the **Virtual Page Number (VPN)** from the rest of the address.  
+4. Check **VPN < Bounds[SN]**; if false ⇒ **fault**.  
+5. Compute **AddressOfPTE = Base[SN] + (VPN × sizeof(PTE))**.  
+6. Fetch **PTE**, find **PFN**, complete translation.
+
+**Effect:** separate linear page tables per logical segment; no entries for the unused middle.
+
+| **Pro** | **Con** |
+|---|---|
+| Solves the primary problem by not allocating page table space for the unused middle of the address space. | Still suffers from external fragmentation when allocating page tables of varying sizes. |
+|  | Not flexible enough for more complex or sparsely used address spaces. |
+
+- While this hybrid is a clever improvement, it still requires that page tables be allocated as contiguous chunks in physical memory, reintroducing the problem of external fragmentation.
+  - Its inflexibility ultimately led to the development of a more powerful solution.
+
+### The Modern Solution: Multi-Level Page Tables
+- The dominant, modern solution to the problem of oversized page tables is the multi-level page table.
+  - This technique turns the linear page table into a tree-like structure, allowing the OS to allocate page table space **only** for regions of the virtual address space that are actually in use—saving memory and improving flexibility.
+
+#### The Core Idea: Chopping Up the Page Table
+- Treat the page table **itself** as pageable.  
+- Break the linear page table into **page-sized units**.  
+- If an entire page of PTEs is invalid, **don’t allocate** that page.  
+- Introduce a **Page Directory** (a page table *for the page table*), with entries (PDEs) that contain:  
+  - a **valid bit** (is the next-level page-table page present?)  
+  - a **PFN** (where the next-level page table lives in physical memory)
+- Split the VPN into:
+  - **PDX**: Page Directory Index  
+  - **PTI**: Page Table Index
+
+#### A Detailed Example: Two-Level Paging
+
+**Parameters:**
+- **Virtual Address Space:** 16 KB (14-bit virtual address)  
+- **Page Size:** 64 bytes (6-bit offset)  
+- **VPN bits:** `14 - 6 = 8` bits  
+- **Split:** `VPN = PDX (4 bits) | PTI (4 bits)`
+
+**Example address:** `4200` (decimal) ⇒ binary `0100 0001 101000` (14 bits)
+
+| Field | Bits | Value (bin) | Value (dec) |
+|---|---:|---:|---:|
+| PDX | 13–10 | `0100` | 4 |
+| PTI | 9–6 | `0001` | 1 |
+| Offset | 5–0 | `101000` | 40 |
+
+**Page-table walk:**
+1. **PDX = 4**. Use **Page Directory Base Register** + `PDX` to locate **PDE**.  
+2. **Check PDE valid**. If invalid ⇒ region unused ⇒ **fault**.
+    - If valid ⇒ get **PFN** for the page-table page.  
+3. **PTI = 1**. Use PFN + `PTI` to locate **PTE**.  
+4. **Check PTE valid**. If invalid ⇒ **page fault**.
+    - If valid ⇒ get **data PFN**.  
+5. **Physical Address = data PFN || Offset (40)**.
+
+**Result:** 
+- allocate page-table pages **on demand**.
+- For a sparse space: **1 page** for the directory + **a few** page-table pages, vs. a full linear table.
+
+#### Going Deeper: Three or More Levels
+- Apply the same idea recursively when the page directory itself is too large to fit in one page.
+
+**Example:** 30-bit VA, 512-byte pages (`2^9`).  
+- Offset: 9 bits ⇒ **VPN = 21 bits**  
+- **PTE size = 4 bytes**, entries per 512B page = `512 / 4 = 128 = 2^7` ⇒ **PTI = 7 bits**  
+- Remaining VPN bits for directory = `21 - 7 = 14` ⇒ directory needs `2^14` entries  
+- Directory size = `2^14 × 4 = 64 KB` ⇒ too big for one 512B page ⇒ add another level
+- Modern 64-bit systems commonly use **four or five levels**.
+
+#### Evaluating Multi-Level Tables
+
+| **Advantages** | **Disadvantages** |
+|---|---|
+| **Saves Memory:** Allocate page-table space only for used regions. | **Performance Cost:** A TLB miss now needs two (or more) memory reads. |
+| **Flexibility:** Page tables stored non-contiguously in physical memory. | **Increased Complexity:** More involved hardware/OS lookup logic. |
+
+- The “Flexibility” above directly solves the external-fragmentation problem in the paging/segmentation hybrid.
+- Multi-level tables masterfully trade a **small time cost on TLB misses** for **massive space savings**.
+  - Next, we quantify that time cost.
+
+### The Performance Impact: It's All About the TLB
+- The most significant drawback of multi-level page tables is the time required to perform a page table walk—**paid only on a TLB miss**.
+- **Two-level walk cost:** at least **two extra memory reads** (PDE + PTE), each taking **tens to hundreds of ns**.  
+- **TLB role:**  
+  - **Hit:** translation found in TLB ⇒ walk **avoided**.  
+  - **Miss:** perform walk, then cache translation in TLB.
+- **Trade-off:** space efficiency via multi-level tables vs. worst-case latency on misses.  
+- **System performance hinges on a high TLB hit rate.**
+
+### Practical Implications for Engineers
+- These mechanics directly influence performance and resource consumption.
+
+#### For All Software Engineers: VSZ vs. RSS
+- Multi-level tables explain the difference between **VSZ** and **RSS**.
+- **VSZ (Virtual Size):** total size of the process’s virtual address space (can be huge).  
+- **RSS (Resident Set Size):** the portion currently in **physical memory** (RAM).
+- Think **VSZ** as the skyscraper blueprint; **RSS** as the floors actually built and lit.  
+- The OS only allocates page frames and *page-table pages* for regions you **touch**. Hence, *large VSZ, small RSS* is normal.
+
+#### For Quant/HFT Developers: The Cost of a TLB Miss
+- A multi-level page-table walk is a **high-latency, non-deterministic event** that will wreck P99/P99.9 targets.
+- Each step (PDE fetch, PTE fetch) is a **dependent load** through L1/L2/L3/DRAM.  
+- Expect **hundreds of ns** spikes.  
+
+**Rules for low-latency design:**
+- **Data locality is king.** Ensure the hot working set fits within the **TLB’s reach**.  
+- **Process dense arrays, not sparse pointer chains.** Dense, spatially local access patterns warm the TLB; pointer chasing thrashes it.  
+- **Process proliferation has a cost.** Each process has its **own** page tables; many processes consume kernel memory and management overhead.
+
+### Conclusion and Key Takeaways
+1. **The Problem:** Linear page tables are too large for modern, sparse virtual address spaces—wasting memory on unused regions. 
+2. **The Solution:** **Multi-level page tables** allocate page-table space **only** where needed via a tree-like structure.  
+3. **The Trade-Off:** Memory efficiency comes at the cost of **TLB-miss latency** (multiple memory reads per walk).  
+4. **The Real World:** TLB performance is paramount.
+    - For general engineers, this appears as **VSZ vs. RSS**; for latency-sensitive systems, it makes **data locality** non-negotiable for high performance.
