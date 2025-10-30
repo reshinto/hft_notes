@@ -2282,7 +2282,7 @@ Now, let's consider an instruction that tries to access memory outside the proce
   - It introduced the foundational concepts of hardware-assisted address translation and protection.
   - While its specific implementation has been superseded, the core ideas—relocation, protection, and the division of labor between hardware and the OS—remain absolutely central to how all modern computer systems work.
 
-## 16: Free-Space Management
+## 16: Segmentation
 - In our exploration of memory virtualization, the simple technique of dynamic relocation using a base and a bounds register provides essential protection and allows the operating system to place a process's address space anywhere in physical memory.
 	- However, this approach has a significant drawback: it is both inefficient and inflexible for address spaces with large, unused regions.
   - The canonical address space, for instance, features a potentially vast, unused area between the program's heap and its stack.
