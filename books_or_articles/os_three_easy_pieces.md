@@ -3775,3 +3775,251 @@ Low Address  |--> P0 (User Code & Heap, grows up)
 
 - Ultimately, studying great historical systems like VMS does more than teach us about the past.
   - It provides us with a durable mental model for understanding the fundamental trade-offs and core principles that continue to govern the complex and powerful operating systems we depend on every day.
+
+## 26: Concurrency: An Introduction
+
+### Why We Need Concurrency: The Core Motivations
+- Concurrency is the art of managing multiple tasks at once.
+  - It is the mechanism that unlocks the full potential of modern computer hardware.
+  - It also helps us create responsive and efficient applications for users.
+  - There are three primary reasons why we need to build concurrent programs.
+    - **To Overlap Computation and I/O** While one part of a program waits for a slow operation, such as reading a file from disk, the system can use that time to run another part of the program.
+    - **To Use Multiple Processors (Multicore)** Modern CPUs have multiple processing cores.
+      - Concurrency is the only way for a single program to run on more than one core at the same time.
+    - **To Build Responsive User Interfaces** Concurrency allows a program to respond to user input, like a mouse click, even while it is busy with a long-running task.
+
+#### Concurrency vs. Parallelism
+- It is important to distinguish between two related terms: concurrency and parallelism.
+- Concurrency is the challenge of managing multiple tasks that are in progress over the same period.
+  - On a single processor, this is achieved by the operating system switching between tasks, a technique called time sharing that creates the illusion that many things are happening at once.
+- Parallelism is the act of actually executing multiple tasks at the exact same time.
+  - This requires hardware with multiple CPU cores.
+  - A chef chopping vegetables while also keeping an eye on a boiling pot is concurrent.
+  - Two chefs chopping vegetables at the same time is parallel.
+
+#### Threads vs. Processes
+- Threads are the fundamental units of execution within a single program.
+  - A process, which is an instance of a running program, has its own private memory address space.
+  - Threads within that process, however, share that same address space.
+  - This key difference leads to a number of important distinctions.
+
+| Feature       | Process                                             | Thread                                               |
+|---------------|------------------------------------------------------|------------------------------------------------------|
+| Address Space | Has its own private address space.                   | Shares the address space with other threads in the same process. |
+| State         | More overhead: process control blocks, page tables, etc. | Lighter weight: needs its own program counter, register set, and stack. |
+| Creation      | More expensive to create.                            | Cheaper and faster to create.                        |
+| Communication | Requires explicit inter-process communication (IPC). | Can communicate easily through shared memory (variables). |
+
+- While threads offer these powerful benefits—especially cheap communication through shared memory—that shared address space is also their greatest peril.
+  - It creates a treacherous landscape where, without extreme care, one thread can corrupt the work of another.
+  - This is the challenge we will now confront.
+
+### The Unpredictable World of Threads
+- Concurrent programs are, by their nature, nondeterministic.
+  - The operating system's scheduler can switch between active threads at any time.
+  - Because of this, the exact order of execution is unpredictable from one run to the next.
+- Let's look at a simple program that creates two threads.
+  - The main program creates two threads, one that prints 'A' and another that prints 'B'.
+  - After creating them, the main thread waits for both to finish their work.
+
+```c
+#include <stdio.h>
+#include <assert.h>
+#include <pthread.h>
+
+void *mythread(void *arg) {
+    printf("%s\n", (char *) arg);
+    return NULL;
+}
+
+int main(int argc, char *argv[]) {
+    pthread_t p1, p2;
+    int rc;
+    printf("main: begin\n");
+    rc = pthread_create(&p1, NULL, mythread, "A"); assert(rc == 0);
+    rc = pthread_create(&p2, NULL, mythread, "B"); assert(rc == 0);
+    // join waits for the threads to finish
+    rc = pthread_join(p1, NULL); assert(rc == 0);
+    rc = pthread_join(p2, NULL); assert(rc == 0);
+    printf("main: end\n");
+    return 0;
+}
+```
+
+- Concurrent programs are, by their nature, nondeterministic.
+  - The operating system's scheduler can switch between active threads at any time. Because of this, the exact order of execution is unpredictable from one run to the next.
+- Let's look at a simple program that creates two threads.
+  - The main program creates two threads, one that prints 'A' and another that prints 'B'.
+  - After creating them, the main thread waits for both to finish their work.
+- Because we cannot predict the scheduler's behavior, this simple program can produce several different outputs.
+
+**Example 1: Main waits, then threads run.**  
+- The main thread might create both threads before either gets a chance to run.
+- Only after it begins to wait do the two created threads execute.
+
+```
+main                 Thread 1             Thread 2
+starts running
+prints "main: begin"
+creates Thread 1
+creates Thread 2
+waits for T1
+                     runs
+                     prints "A"
+                     returns
+waits for T2
+                                          runs
+                                          prints "B"
+                                          returns
+prints "main: end"
+```
+
+**Example 2: Threads run as they are created.**  
+- The scheduler might run Thread 1 to completion immediately after it is created.
+- It could then switch back to the main thread, which creates Thread 2 and waits for it to complete.
+
+```
+main                 Thread 1             Thread 2
+starts running
+prints "main: begin"
+creates Thread 1
+                     runs
+                     prints "A"
+                     returns
+creates Thread 2
+                                          runs
+                                          prints "B"
+                                          returns
+waits for T1
+waits for T2
+prints "main: end"
+```
+
+**Example 3: Thread 2 runs before Thread 1.**  
+- The order of thread creation does not guarantee the order of execution.
+- The scheduler is free to run Thread 2 before Thread 1.
+
+```
+main                 Thread 1             Thread 2
+starts running
+prints "main: begin"
+creates Thread 1
+creates Thread 2
+                                          runs
+                                          prints "B"
+                                          returns
+waits for T1
+                     runs
+                     prints "A"
+                     returns
+waits for T2
+prints "main: end"
+```
+
+- For simple, independent tasks like printing a character, this unpredictability is harmless.
+  - However, when threads need to cooperate by sharing data, this nondeterminism becomes the root of a major class of software bugs.
+
+### The Core Problem: The Race Condition
+- The central challenge of concurrency is coordinating access to shared data.
+  - When multiple threads attempt to read and write a shared piece of memory, the timing of their operations can lead to incorrect results.
+  - This is the essence of a race condition.
+- Consider a program where two threads each increment a shared global counter a large number of times.
+  - If the counter starts at 0 and each thread increments it 1,000,000 times, we expect the final value to be 2,000,000.
+  - But as we will see, this often is not the case.
+
+#### Breaking Down an Increment
+- A single line of high-level code like `counter++` is not an atomic operation.
+  - It does not execute as a single, uninterruptible instruction.
+  - A compiler might translate this single C statement into a sequence of three machine instructions.
+  - In a trading system, this isn't just a counter; it's your position in a stock or the volume at a specific price level.
+  - A single lost update can be the difference between profit and a catastrophic loss.
+
+```asm
+mov 0x8049a1c, %eax   ; load the value of counter into register eax
+add $0x1, %eax        ; increment the value in register eax
+mov %eax, 0x8049a1c   ; store the new value back into counter
+```
+
+- Because these three instructions are not guaranteed to execute all at once, the scheduler can interrupt a thread between any of them.
+  - This is where the problem begins.
+
+#### A "Lost Update" Scenario
+- Pay very close attention to this next sequence.
+  - This interleaving is the archetypal bug in concurrent programming.
+1. Assume the shared counter variable is 50.
+2. Thread 1 executes the first two instructions: `mov` and `add`.
+    - It loads 50 into its private register `eax` and increments it.
+    - Its `eax` register now holds the value 51.
+3. A context switch occurs!
+    - The operating system saves Thread 1's state (including its `eax` value of 51) and switches to Thread 2.
+4. Thread 2 now runs.
+    - It executes all three instructions without interruption.
+    - It loads the value of counter (still 50) into its register, increments it to 51, and stores 51 back into the shared counter variable.
+5. Another context switch occurs!
+    - The OS switches back to Thread 1.
+6. Thread 1 resumes exactly where it left off.
+    - It has one instruction left to execute: the final `mov`.
+    - It stores the value from its private `eax` register (which is 51) back into the shared counter.
+7. The final value of counter is 51.
+    - It should be 52.
+    - Both threads incremented the counter, but one of those updates was lost.
+
+#### Key Definitions
+- **Race Condition:** An error that occurs when the result of a computation depends on the unpredictable timing of how multiple threads are interleaved.
+- **Indeterminate Program:** A program with one or more race conditions.
+  - Its output can change from one run to the next.
+- **Critical Section:** A piece of code that accesses a shared resource.
+  - To ensure correctness, we must prevent more than one thread from executing in the critical section at the same time.
+- **Mutual Exclusion:** The property that ensures only one thread can be in a critical section at a time.
+  - This is the solution to race conditions.
+- **Atomicity:** The idea of making a group of instructions execute as an "all or nothing" unit, as if it were a single, uninterruptible hardware instruction.
+- The fundamental goal of concurrency control is to provide mutual exclusion for critical sections.
+  - This makes them behave atomically and eliminates race conditions entirely.
+
+### Practical Implications: Why This Matters
+- Race conditions are not just theoretical problems.
+  - They are the source of some of the most frustrating and difficult-to-find bugs in real-world software.
+  - These bugs, often called "heisenbugs," seem to disappear when you try to debug them because the act of observation changes the program's timing.
+
+#### For Every Software Engineer
+- Do not think this is just an application-level problem.
+  - The operating system itself was the first major concurrent program, forced to handle interrupts that could arrive at any time.
+  - A classic example is updating the file system.
+- Consider what happens when two different processes try to append data to the same file.
+  - The OS kernel must update shared data structures, such as:
+    - The file's inode, to update its size.
+    - The disk's allocation bitmap, to mark a new data block as used.
+- If an interrupt occurs at just the wrong time inside the kernel's file system code, the same kind of "lost update" race condition could happen.
+  - This could corrupt the entire file system.
+  - This example shows why all systems engineers must understand how to design thread-safe modules and use synchronization tools to protect shared data.
+
+#### Critical Insights for Quant/HFT Developers
+- In the high-stakes, low-latency world of quantitative and high-frequency trading (HFT), these abstract concepts have direct and severe financial implications.
+  - **Race Conditions Cause Incorrect State and Jitter** A "lost update" on a simple counter is directly analogous to miscalculating the state of an order book or a position.
+    - Even a momentary incorrect state can lead to executing a bad trade, with potentially large financial losses.
+    - Furthermore, the nondeterministic timing of threads introduces unpredictable delays, known as jitter, into critical code paths.
+    - In systems that measure performance in nanoseconds, jitter is unacceptable.
+  - **Contention is a Performance Killer** The core logic of a trading algorithm is a "hot path" that must execute with extreme speed.
+    - If multiple threads are constantly fighting over a shared piece of data (a situation known as high contention), they will be forced to wait for one another.
+    - This waiting, even for a few microseconds, destroys performance and negates any low-latency advantage.
+
+### The Path Forward: A Preview of Solutions
+- **Locks (Mutexes):** The most fundamental tool for providing mutual exclusion and protecting critical sections.
+- **Condition Variables & Semaphores:** More advanced tools for coordinating complex interactions between threads, allowing them to wait for specific conditions to become true.
+
+### #Context/Extension: Advanced Design Patterns for HFT
+- In extreme environments like HFT, developers often use specialized patterns to avoid the overhead of traditional locking altogether.
+  - These advanced techniques are designed for maximum performance.
+    - **Single-Writer Patterns & Message Passing:** Instead of allowing multiple threads to write to the same data, these systems are designed so that only one dedicated thread can ever modify a specific piece of data.
+      - Other threads communicate with it via messages, often through highly-optimized queues.
+      - This pattern avoids the entire problem of race conditions on writes by eliminating the critical section itself.
+      - If only one thread can write, no mutual exclusion is needed for that data.
+    - **Lock-Free Data Structures:** These are data structures, like queues, that are built using special atomic hardware instructions.
+      - These structures rebuild fundamental operations, like adding to a queue, using hardware atomic instructions like Compare-And-Swap.
+      - This makes the operation uninterruptible at the hardware level, achieving the 'atomicity' we defined earlier without the overhead of a traditional lock.
+    - **Hardware-Aware Techniques:** Performance is tuned even further by controlling how threads and data are managed at the hardware level.
+      - Developers might pin a critical thread to a specific CPU core to prevent the operating system from moving it.
+      - They also design data layouts carefully to work efficiently with CPU caches and avoid performance penalties like "false sharing."
+- Concurrency is one of the deepest and most challenging topics in computer science.
+  - But do not be intimidated. By mastering the fundamental problem—the race condition—you have taken the essential first step.
+  - You now have the key to unlock the principles of writing correct, robust, and truly high-performance systems.
